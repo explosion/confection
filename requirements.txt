@@ -4,4 +4,5 @@ pytest>=4.6.5
 mypy
 pydantic
 typing_extensions
+types-dataclasses
 srsly
