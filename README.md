@@ -1,6 +1,6 @@
 <a href="https://explosion.ai"><img src="https://explosion.ai/assets/img/logo.svg" width="125" height="125" align="right" /></a>
 
-# confection: The sweetest config system for Python
+# :candy: Confection: The sweetest config system for Python 
 
 `confection` is a lightweight library that offers a **configuration system** letting you conveniently describe arbitrary 
 trees of objects.
