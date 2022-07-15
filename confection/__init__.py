@@ -11,7 +11,7 @@ from pydantic import BaseModel, create_model, ValidationError, Extra
 from pydantic.main import ModelMetaclass
 from pydantic.fields import ModelField
 import srsly
-import confection.registry
+import catalogue
 import inspect
 import io
 import copy
@@ -702,7 +702,7 @@ class confection_registry(object):
         """Create a new custom registry."""
         if hasattr(cls, registry_name):
             raise ValueError(f"Registry '{registry_name}' already exists")
-        reg: Decorator = confection.registry.create(
+        reg: Decorator = catalogue.create(
             "catalogue", registry_name, entry_points=entry_points
         )
         setattr(cls, registry_name, reg)
