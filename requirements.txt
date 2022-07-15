@@ -1,0 +1,7 @@
+zipp>=0.5; python_version < "3.8"
+typing-extensions>=3.6.4; python_version < "3.8"
+pytest>=4.6.5
+mypy
+pydantic
+typing_extensions
+srsly
