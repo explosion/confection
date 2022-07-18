@@ -19,7 +19,7 @@ config system we’re aware of is [Gin](https://github.com/google/gin-config), w
 allows you to link the configuration system to functions in your code using a decorator. `confection`'s config system is 
 simpler and emphasizes a different workflow via a subset of Gin’s functionality.
 
-[![Azure Pipelines](https://img.shields.io/azure-devops/build/explosion-ai/public/14/master.svg?logo=azure-pipelines&style=flat-square&label=build)](https://dev.azure.com/explosion-ai/public/_build?definitionId=14)
+[![Azure Pipelines](https://img.shields.io/azure-devops/build/explosion-ai/public/14/master.svg?logo=azure-pipelines&style=flat-square&label=build)](https://dev.azure.com/explosion-ai/public/_build?definitionId=28)
 [![Current Release Version](https://img.shields.io/github/v/release/explosion/confection.svg?style=flat-square&include_prereleases&logo=github)](https://github.com/explosion/confection/releases)
 [![pypi Version](https://img.shields.io/pypi/v/confection.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/confection/)
 [![conda Version](https://img.shields.io/conda/vn/conda-forge/confection.svg?style=flat-square&logo=conda-forge&logoColor=white)](https://anaconda.org/conda-forge/confection)
