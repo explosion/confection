@@ -109,28 +109,28 @@ To load and parse this configuration:
 ```python
 import dataclasses
 from typing import Union, Iterable
-
-from confection import confection_registry, Config
+import catalogue
+from confection import registry, Config
 
 # Create a new registry.
-confection_registry.create("optimizers")
+registry.optimizers = catalogue.create("confection", "optimizers", entry_points=False)
 
 
 # Define a dummy optimizer class.
 @dataclasses.dataclass
 class MyCoolOptimizer:
-   learn_rate: float
-   gamma: float
+    learn_rate: float
+    gamma: float
 
 
-@confection_registry.optimizers.register("my_cool_optimizer.v1")
+@registry.optimizers.register("my_cool_optimizer.v1")
 def make_my_optimizer(learn_rate: Union[float, Iterable[float]], gamma: float):
-   return MyCoolOptimizer(learn_rate, gamma)
+    return MyCoolOptimizer(learn_rate, gamma)
 
 
 # Load the config file from disk, resolve it and fetch the instantiated optimizer object.
 config = Config().from_disk("./config.cfg")
-resolved = confection_registry.resolve(config)
+resolved = registry.resolve(config)
 optimizer = resolved["optimizer"]  # MyCoolOptimizer(learn_rate=0.001, gamma=1e-08)
 ```
 

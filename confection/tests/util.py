@@ -37,18 +37,15 @@ class Cat(Generic[InT, OutT]):
     value_out: OutT
 
 
-class my_registry(confection.confection_registry):
-    cats = catalogue.create("config_tests", "cats", entry_points=False)
-    optimizers = catalogue.create(
-        "config_tests", "optimizers", entry_points=False
-    )
-    schedules = catalogue.create(
-        "config_tests", "schedules", entry_points=False
-    )
-    initializers = catalogue.create(
-        "config_tests", "initializers", entry_points=False
-    )
-    layers = catalogue.create("config_tests", "layers", entry_points=False)
+my_registry_namespace = "config_tests"
+
+class my_registry(confection.registry):
+    namespace = "config_tests"
+    cats = catalogue.create(namespace, "cats", entry_points=False)
+    optimizers = catalogue.create(namespace, "optimizers", entry_points=False)
+    schedules = catalogue.create(namespace, "schedules", entry_points=False)
+    initializers = catalogue.create(namespace, "initializers", entry_points=False)
+    layers = catalogue.create(namespace, "layers", entry_points=False)
 
 
 @my_registry.cats.register("catsie.v1")
