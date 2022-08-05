@@ -186,15 +186,11 @@ def test_fill_invalidate_promise():
 
 
 def test_create_registry():
-    # with pytest.raises(ValueError):
-    #     catalogue.create(my_registry.namespace, "cats", entry_points=False)
     my_registry.dogs = catalogue.create(my_registry.namespace, "dogs", entry_points=False)
     assert hasattr(my_registry, "dogs")
     assert len(my_registry.dogs.get_all()) == 0
     my_registry.dogs.register("good_boy.v1", func=lambda x: x)
     assert len(my_registry.dogs.get_all()) == 1
-    # with pytest.raises(ValueError):
-    #     catalogue.create(my_registry.namespace, "dogs", entry_points=False)
 
 
 def test_registry_methods():
