@@ -79,7 +79,7 @@ from other sections using the dot notation and placeholders indicated by the dol
 `${training.use_vectors}` will receive the value of use_vectors in the training block. This is useful for settings that
 are shared across components.
 
-The config format has three main differences from Python’s built-in configparser:
+The config format has three main differences from Python’s built-in `configparser`:
 
 1. JSON-formatted values. `confection` passes all values through `json.loads` to interpret them. You can use atomic
    values like strings, floats, integers or booleans, or you can use complex objects such as lists or maps.
