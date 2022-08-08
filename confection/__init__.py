@@ -696,7 +696,7 @@ class Promise:
     kwargs: Dict[str, Any]
 
 
-class registry(object):
+class registry:
     @classmethod
     def has(cls, registry_name: str, func_name: str) -> bool:
         """Check whether a function is available in a registry."""
