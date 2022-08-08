@@ -1,6 +1,6 @@
 <a href="https://explosion.ai"><img src="https://explosion.ai/assets/img/logo.svg" width="125" height="125" align="right" /></a>
 
-# confection: The sweetest config system for Python
+# :candy: Confection: The sweetest config system for Python
 
 `confection` is a lightweight library that offers a **configuration system** letting you conveniently describe arbitrary 
 trees of objects.
@@ -19,7 +19,7 @@ config system we’re aware of is [Gin](https://github.com/google/gin-config), w
 allows you to link the configuration system to functions in your code using a decorator. `confection`'s config system is 
 simpler and emphasizes a different workflow via a subset of Gin’s functionality.
 
-[![Azure Pipelines](https://img.shields.io/azure-devops/build/explosion-ai/public/14/master.svg?logo=azure-pipelines&style=flat-square&label=build)](https://dev.azure.com/explosion-ai/public/_build?definitionId=14)
+[![Azure Pipelines](https://img.shields.io/azure-devops/build/explosion-ai/public/14/master.svg?logo=azure-pipelines&style=flat-square&label=build)](https://dev.azure.com/explosion-ai/public/_build?definitionId=28)
 [![Current Release Version](https://img.shields.io/github/v/release/explosion/confection.svg?style=flat-square&include_prereleases&logo=github)](https://github.com/explosion/confection/releases)
 [![pypi Version](https://img.shields.io/pypi/v/confection.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/confection/)
 [![conda Version](https://img.shields.io/conda/vn/conda-forge/confection.svg?style=flat-square&logo=conda-forge&logoColor=white)](https://anaconda.org/conda-forge/confection)
@@ -79,7 +79,7 @@ from other sections using the dot notation and placeholders indicated by the dol
 `${training.use_vectors}` will receive the value of use_vectors in the training block. This is useful for settings that
 are shared across components.
 
-The config format has three main differences from Python’s built-in configparser:
+The config format has three main differences from Python’s built-in `configparser`:
 
 1. JSON-formatted values. `confection` passes all values through `json.loads` to interpret them. You can use atomic
    values like strings, floats, integers or booleans, or you can use complex objects such as lists or maps.
@@ -109,28 +109,28 @@ To load and parse this configuration:
 ```python
 import dataclasses
 from typing import Union, Iterable
-
-from confection import confection_registry, Config
+import catalogue
+from confection import registry, Config
 
 # Create a new registry.
-confection_registry.create("optimizers")
+registry.optimizers = catalogue.create("confection", "optimizers", entry_points=False)
 
 
 # Define a dummy optimizer class.
 @dataclasses.dataclass
 class MyCoolOptimizer:
-   learn_rate: float
-   gamma: float
+    learn_rate: float
+    gamma: float
 
 
-@confection_registry.optimizers.register("my_cool_optimizer.v1")
+@registry.optimizers.register("my_cool_optimizer.v1")
 def make_my_optimizer(learn_rate: Union[float, Iterable[float]], gamma: float):
-   return MyCoolOptimizer(learn_rate, gamma)
+    return MyCoolOptimizer(learn_rate, gamma)
 
 
 # Load the config file from disk, resolve it and fetch the instantiated optimizer object.
 config = Config().from_disk("./config.cfg")
-resolved = confection_registry.resolve(config)
+resolved = registry.resolve(config)
 optimizer = resolved["optimizer"]  # MyCoolOptimizer(learn_rate=0.001, gamma=1e-08)
 ```
 

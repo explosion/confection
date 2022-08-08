@@ -1,5 +1,6 @@
 import inspect
 
+import catalogue
 import pytest
 from typing import Dict, Optional, Iterable, Callable, Any, Union
 from types import GeneratorType
@@ -185,15 +186,11 @@ def test_fill_invalidate_promise():
 
 
 def test_create_registry():
-    with pytest.raises(ValueError):
-        my_registry.create("cats")
-    my_registry.create("dogs")
+    my_registry.dogs = catalogue.create(my_registry.namespace, "dogs", entry_points=False)
     assert hasattr(my_registry, "dogs")
     assert len(my_registry.dogs.get_all()) == 0
     my_registry.dogs.register("good_boy.v1", func=lambda x: x)
     assert len(my_registry.dogs.get_all()) == 1
-    with pytest.raises(ValueError):
-        my_registry.create("dogs")
 
 
 def test_registry_methods():
@@ -338,7 +335,7 @@ def test_validation_custom_types():
     ):
         return None
 
-    my_registry.create("complex")
+    my_registry.complex = catalogue.create(my_registry.namespace, "complex", entry_points=False)
     my_registry.complex("complex.v1")(complex_args)
     cfg = {"@complex": "complex.v1", "rate": 1.0, "steps": 20, "log_level": "INFO"}
     my_registry.resolve({"config": cfg})

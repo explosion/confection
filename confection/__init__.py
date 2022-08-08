@@ -11,7 +11,7 @@ from pydantic import BaseModel, create_model, ValidationError, Extra
 from pydantic.main import ModelMetaclass
 from pydantic.fields import ModelField
 import srsly
-import confection.registry
+import catalogue
 import inspect
 import io
 import copy
@@ -408,7 +408,7 @@ class Config(dict):
                     # Reference to a function with no arguments, serialize
                     # inline as a dict and don't create new section
                     if (
-                        confection_registry.is_promise(value)
+                        registry.is_promise(value)
                         and len(value) == 1
                         and is_kwarg
                     ):
@@ -696,17 +696,7 @@ class Promise:
     kwargs: Dict[str, Any]
 
 
-class confection_registry(object):
-    @classmethod
-    def create(cls, registry_name: str, entry_points: bool = False) -> None:
-        """Create a new custom registry."""
-        if hasattr(cls, registry_name):
-            raise ValueError(f"Registry '{registry_name}' already exists")
-        reg: Decorator = confection.registry.create(
-            "catalogue", registry_name, entry_points=entry_points
-        )
-        setattr(cls, registry_name, reg)
-
+class registry:
     @classmethod
     def has(cls, registry_name: str, func_name: str) -> bool:
         """Check whether a function is available in a registry."""
@@ -1050,4 +1040,4 @@ class confection_registry(object):
         return create_model("ArgModel", **sig_args)
 
 
-__all__ = ["Config", "confection_registry", "ConfigValidationError"]
+__all__ = ["Config", "registry", "ConfigValidationError"]

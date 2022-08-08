@@ -21,6 +21,7 @@ from typing import (
 import numpy
 from pydantic.types import StrictBool
 
+import catalogue
 import confection
 from confection.util import partial
 
@@ -36,18 +37,15 @@ class Cat(Generic[InT, OutT]):
     value_out: OutT
 
 
-class my_registry(confection.confection_registry):
-    cats = confection.registry.create("config_tests", "cats", entry_points=False)
-    optimizers = confection.registry.create(
-        "config_tests", "optimizers", entry_points=False
-    )
-    schedules = confection.registry.create(
-        "config_tests", "schedules", entry_points=False
-    )
-    initializers = confection.registry.create(
-        "config_tests", "initializers", entry_points=False
-    )
-    layers = confection.registry.create("config_tests", "layers", entry_points=False)
+my_registry_namespace = "config_tests"
+
+class my_registry(confection.registry):
+    namespace = "config_tests"
+    cats = catalogue.create(namespace, "cats", entry_points=False)
+    optimizers = catalogue.create(namespace, "optimizers", entry_points=False)
+    schedules = catalogue.create(namespace, "schedules", entry_points=False)
+    initializers = catalogue.create(namespace, "initializers", entry_points=False)
+    layers = catalogue.create(namespace, "layers", entry_points=False)
 
 
 @my_registry.cats.register("catsie.v1")
