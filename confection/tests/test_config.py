@@ -2,16 +2,10 @@ import inspect
 
 import catalogue
 import pytest
-from typing import Dict, Optional, Iterable, Callable, Any, Union
+from typing import Dict, Optional, Iterable, Callable, Any, Union, List, Tuple
 from types import GeneratorType
 import pickle
 
-try:
-    import numpy
-
-    has_numpy = True
-except ImportError:
-    has_numpy = False
 from pydantic import BaseModel, StrictFloat, PositiveInt, constr
 from pydantic.types import StrictBool
 
@@ -510,10 +504,22 @@ def test_objects_from_config():
     assert optimizer.learn_rate == [0.001] * 4
 
 
-@pytest.mark.skipif(not has_numpy, reason="needs numpy")
 def test_partials_from_config():
     """Test that functions registered with partial applications are handled
     correctly (e.g. initializers)."""
+    numpy = pytest.importorskip("numpy")
+
+    def uniform_init(
+            shape: Tuple[int, ...], *, lo: float = -0.1, hi: float = 0.1
+    ) -> List[float]:
+        return numpy.random.uniform(lo, hi, shape).tolist()
+
+    @my_registry.initializers("uniform_init.v1")
+    def configure_uniform_init(
+            *, lo: float = -0.1, hi: float = 0.1
+    ) -> Callable[[List[float]], List[float]]:
+        return partial(uniform_init, lo=lo, hi=hi)
+
     name = "uniform_init.v1"
     cfg = {"test": {"@initializers": name, "lo": -0.2}}
     func = my_registry.resolve(cfg)["test"]
@@ -758,8 +764,8 @@ def test_fill_config_dict_return_type():
     assert result["not_evil"] is True
 
 
-@pytest.mark.skipif(not has_numpy, reason="needs numpy")
 def test_deepcopy_config():
+    numpy = pytest.importorskip("numpy")
     config = Config({"a": 1, "b": {"c": 2, "d": 3}})
     copied = config.copy()
     # Same values but not same object
@@ -960,7 +966,6 @@ def test_config_reserved_aliases():
         my_registry.resolve({"test": cfg})
 
 
-@pytest.mark.skipif(not has_numpy, reason="needs numpy")
 @pytest.mark.parametrize("d", [".", ":"])
 def test_config_no_interpolation(d):
     """Test that interpolation is correctly preserved. The parametrized
@@ -968,6 +973,7 @@ def test_config_no_interpolation(d):
     valid. The double {{ }} in the config strings are required to prevent the
     references from being interpreted as an actual f-string variable.
     """
+    numpy = pytest.importorskip("numpy")
     c_str = f"""[a]\nb = 1\n\n[c]\nd = ${{a{d}b}}\ne = \"hello${{a{d}b}}"\nf = ${{a}}"""
     config = Config().from_str(c_str, interpolate=False)
     assert not config.is_interpolated
@@ -1087,8 +1093,8 @@ def test_config_deep_merge_variables():
     assert merged["a"]["c"] == 2
 
 
-@pytest.mark.skipif(not has_numpy, reason="needs numpy")
 def test_config_to_str_roundtrip():
+    numpy = pytest.importorskip("numpy")
     cfg = {"cfg": {"foo": False}}
     config_str = Config(cfg).to_str()
     assert config_str == "[cfg]\nfoo = false"
