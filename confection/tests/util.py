@@ -11,19 +11,14 @@ from typing import (
     List,
     Union,
     Generator,
-    Callable,
-    Tuple,
     Generic,
     TypeVar,
     Optional,
 )
-
-import numpy
 from pydantic.types import StrictBool
 
 import catalogue
 import confection
-from confection.util import partial
 
 FloatOrSeq = Union[float, List[float], Generator]
 InT = TypeVar("InT")
@@ -38,6 +33,7 @@ class Cat(Generic[InT, OutT]):
 
 
 my_registry_namespace = "config_tests"
+
 
 class my_registry(confection.registry):
     namespace = "config_tests"
@@ -113,19 +109,6 @@ def warmup_linear(
             )
         yield factor * initial_rate
         step += 1
-
-
-def uniform_init(
-    shape: Tuple[int, ...], *, lo: float = -0.1, hi: float = 0.1
-) -> List[float]:
-    return numpy.random.uniform(lo, hi, shape).tolist()
-
-
-@my_registry.initializers("uniform_init.v1")
-def configure_uniform_init(
-    *, lo: float = -0.1, hi: float = 0.1
-) -> Callable[[List[float]], List[float]]:
-    return partial(uniform_init, lo=lo, hi=hi)
 
 
 @my_registry.cats("generic_cat.v1")
