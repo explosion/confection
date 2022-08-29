@@ -344,7 +344,7 @@ max_epochs = 2000
 base_config = Config().from_str(base_config_str)
 update_config = Config().from_str(update_config_str)
 merged = Config(base_config).merge(update_config)
-print(merged["training"])  # {'patience': 10, 'dropout': 1.0, 'max_epochs': 2000}
+print(merged["training"])  # {'patience': 10, 'dropout': 0.1, 'max_epochs': 2000}
 ```
 
 | Argument    | Type                            | Description                                         |
