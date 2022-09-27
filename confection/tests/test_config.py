@@ -1,4 +1,5 @@
 import inspect
+import platform
 
 import catalogue
 import pytest
@@ -180,7 +181,9 @@ def test_fill_invalidate_promise():
 
 
 def test_create_registry():
-    my_registry.dogs = catalogue.create(my_registry.namespace, "dogs", entry_points=False)
+    my_registry.dogs = catalogue.create(
+        my_registry.namespace, "dogs", entry_points=False
+    )
     assert hasattr(my_registry, "dogs")
     assert len(my_registry.dogs.get_all()) == 0
     my_registry.dogs.register("good_boy.v1", func=lambda x: x)
@@ -329,7 +332,9 @@ def test_validation_custom_types():
     ):
         return None
 
-    my_registry.complex = catalogue.create(my_registry.namespace, "complex", entry_points=False)
+    my_registry.complex = catalogue.create(
+        my_registry.namespace, "complex", entry_points=False
+    )
     my_registry.complex("complex.v1")(complex_args)
     cfg = {"@complex": "complex.v1", "rate": 1.0, "steps": 20, "log_level": "INFO"}
     my_registry.resolve({"config": cfg})
@@ -510,13 +515,13 @@ def test_partials_from_config():
     numpy = pytest.importorskip("numpy")
 
     def uniform_init(
-            shape: Tuple[int, ...], *, lo: float = -0.1, hi: float = 0.1
+        shape: Tuple[int, ...], *, lo: float = -0.1, hi: float = 0.1
     ) -> List[float]:
         return numpy.random.uniform(lo, hi, shape).tolist()
 
     @my_registry.initializers("uniform_init.v1")
     def configure_uniform_init(
-            *, lo: float = -0.1, hi: float = 0.1
+        *, lo: float = -0.1, hi: float = 0.1
     ) -> Callable[[List[float]], List[float]]:
         return partial(uniform_init, lo=lo, hi=hi)
 
@@ -771,6 +776,13 @@ def test_deepcopy_config():
     # Same values but not same object
     assert config == copied
     assert config is not copied
+
+
+@pytest.mark.skipif(
+    platform.python_implementation() == "PyPy", reason="copy does not fail for pypy"
+)
+def test_deepcopy_config_pickle():
+    numpy = pytest.importorskip("numpy")
     # Check for error if value can't be pickled/deepcopied
     config = Config({"a": 1, "b": numpy})
     with pytest.raises(ValueError):
