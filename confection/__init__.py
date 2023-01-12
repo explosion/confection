@@ -44,7 +44,11 @@ class CustomInterpolation(ExtendedInterpolation):
             if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
                 value = json_value
         except Exception:
-            pass
+            if value and value[0] == "'" and value[-1] == "'":
+                warnings.warn(
+                    f"The value [{value}] seems to be single-quoted, but values "
+                    "use JSON formatting, which requires double quotes."
+                )
         return super().before_read(parser, section, option, value)
 
     def before_get(self, parser, section, option, value, defaults):
