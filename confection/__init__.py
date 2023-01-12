@@ -16,6 +16,7 @@ import inspect
 import io
 import copy
 import re
+import warnings
 
 from .util import Decorator
 
@@ -43,6 +44,12 @@ class CustomInterpolation(ExtendedInterpolation):
             json_value = srsly.json_loads(value)
             if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
                 value = json_value
+        except ValueError:
+            if value and value[0] == value[-1] == "'":
+                warnings.warn(
+                    f"The value [{value}] seems to be single-quoted, but values "
+                    "use JSON formatting, which requires double quotes."
+                )
         except Exception:
             pass
         return super().before_read(parser, section, option, value)
