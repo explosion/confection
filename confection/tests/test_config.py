@@ -1379,3 +1379,20 @@ def test_config_overrides(greeting, value, expected):
     assert "${vars.a}" in str_cfg
     cfg = Config().from_str(str_cfg, overrides=overrides)
     assert expected in str(cfg)
+
+
+def test_warn_single_quotes():
+    str_cfg = f"""
+    [project]
+    commands = 'do stuff'
+    """
+
+    with pytest.warns(UserWarning, match="single-quoted"):
+        cfg = Config().from_str(str_cfg)
+
+    # should not warn if single quotes are in the middle
+    str_cfg = f"""
+    [project]
+    commands = some'thing
+    """
+    cfg = Config().from_str(str_cfg)
