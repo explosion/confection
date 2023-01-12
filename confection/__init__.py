@@ -50,6 +50,8 @@ class CustomInterpolation(ExtendedInterpolation):
                     f"The value [{value}] seems to be single-quoted, but values "
                     "use JSON formatting, which requires double quotes."
                 )
+        except Exception:
+            pass
         return super().before_read(parser, section, option, value)
 
     def before_get(self, parser, section, option, value, defaults):
