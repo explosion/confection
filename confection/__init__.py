@@ -45,7 +45,7 @@ class CustomInterpolation(ExtendedInterpolation):
             if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
                 value = json_value
         except Exception:
-            if value and value[0] == "'" and value[-1] == "'":
+            if value and value[0] == value[-1] == "'":
                 warnings.warn(
                     f"The value [{value}] seems to be single-quoted, but values "
                     "use JSON formatting, which requires double quotes."
