@@ -44,7 +44,7 @@ class CustomInterpolation(ExtendedInterpolation):
             json_value = srsly.json_loads(value)
             if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
                 value = json_value
-        except Exception:
+        except ValueError:
             if value and value[0] == value[-1] == "'":
                 warnings.warn(
                     f"The value [{value}] seems to be single-quoted, but values "
