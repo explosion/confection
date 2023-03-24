@@ -354,7 +354,7 @@ class Config(dict):
         """Set overrides in the ConfigParser before config is interpreted."""
         err_title = "Error parsing config overrides"
         for key, value in overrides.items():
-            err_msg = "not a section value that can be overwritten"
+            err_msg = "not a section value that can be overridden"
             err = [{"loc": key.split("."), "msg": err_msg}]
             if "." not in key:
                 raise ConfigValidationError(errors=err, title=err_title)
