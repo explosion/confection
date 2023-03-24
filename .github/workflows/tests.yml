@@ -8,6 +8,7 @@ on:
 jobs:
   tests:
     name: Test
+    if: github.repository == 'explosion/confection'
     strategy:
       fail-fast: false
       matrix:
