@@ -2,24 +2,28 @@
 
 # Confection: The sweetest config system for Python
 
-`confection` :candy: is a lightweight library that offers a **configuration system** letting you conveniently describe arbitrary 
-trees of objects.
+`confection` :candy: is a lightweight library that offers a **configuration
+system** letting you conveniently describe arbitrary trees of objects.
 
-Configuration is a huge challenge for machine-learning code because you may want to expose almost any
-detail of any function as a hyperparameter. The setting you want to expose might be arbitrarily far
-down in your call stack, so it might need to pass all the way through the CLI or REST API,
-through any number of intermediate functions, affecting the interface of everything along the way.
-And then once those settings are added, they become hard to remove later. Default values also
-become hard to change without breaking backwards compatibility.
+Configuration is a huge challenge for machine-learning code because you may want
+to expose almost any detail of any function as a hyperparameter. The setting you
+want to expose might be arbitrarily far down in your call stack, so it might
+need to pass all the way through the CLI or REST API, through any number of
+intermediate functions, affecting the interface of everything along the way. And
+then once those settings are added, they become hard to remove later. Default
+values also become hard to change without breaking backwards compatibility.
 
-To solve this problem, `confection` offers a config system that lets you easily describe arbitrary trees of objects.
-The objects can be created via function calls you register using a simple decorator syntax. You can even version the
-functions you create, allowing you to make improvements without breaking backwards compatibility. The most similar
-config system we’re aware of is [Gin](https://github.com/google/gin-config), which uses a similar syntax, and also 
-allows you to link the configuration system to functions in your code using a decorator. `confection`'s config system is 
-simpler and emphasizes a different workflow via a subset of Gin’s functionality.
+To solve this problem, `confection` offers a config system that lets you easily
+describe arbitrary trees of objects. The objects can be created via function
+calls you register using a simple decorator syntax. You can even version the
+functions you create, allowing you to make improvements without breaking
+backwards compatibility. The most similar config system we’re aware of is
+[Gin](https://github.com/google/gin-config), which uses a similar syntax, and
+also allows you to link the configuration system to functions in your code using
+a decorator. `confection`'s config system is simpler and emphasizes a different
+workflow via a subset of Gin’s functionality.
 
-[![Azure Pipelines](https://img.shields.io/azure-devops/build/explosion-ai/public/14/master.svg?logo=azure-pipelines&style=flat-square&label=build)](https://dev.azure.com/explosion-ai/public/_build?definitionId=28)
+[![tests](https://github.com/explosion/confection/actions/workflows/tests.yml/badge.svg)](https://github.com/explosion/confection/actions/workflows/tests.yml)
 [![Current Release Version](https://img.shields.io/github/v/release/explosion/confection.svg?style=flat-square&include_prereleases&logo=github)](https://github.com/explosion/confection/releases)
 [![pypi Version](https://img.shields.io/pypi/v/confection.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/confection/)
 [![conda Version](https://img.shields.io/conda/vn/conda-forge/confection.svg?style=flat-square&logo=conda-forge&logoColor=white)](https://anaconda.org/conda-forge/confection)
@@ -73,29 +77,37 @@ and resolves it to a `Dict`:
 }
 ```
 
-The config is divided into sections, with the section name in square brackets – for
-example, `[training]`. Within the sections, config values can be assigned to keys using `=`. Values can also be referenced
-from other sections using the dot notation and placeholders indicated by the dollar sign and curly braces. For example,
-`${training.use_vectors}` will receive the value of use_vectors in the training block. This is useful for settings that
-are shared across components.
+The config is divided into sections, with the section name in square brackets –
+for example, `[training]`. Within the sections, config values can be assigned to
+keys using `=`. Values can also be referenced from other sections using the dot
+notation and placeholders indicated by the dollar sign and curly braces. For
+example, `${training.use_vectors}` will receive the value of use_vectors in the
+training block. This is useful for settings that are shared across components.
 
-The config format has three main differences from Python’s built-in `configparser`:
+The config format has three main differences from Python’s built-in
+`configparser`:
 
-1. JSON-formatted values. `confection` passes all values through `json.loads` to interpret them. You can use atomic
-   values like strings, floats, integers or booleans, or you can use complex objects such as lists or maps.
-2. Structured sections. `confection` uses a dot notation to build nested sections. If you have a section named
-   `[section.subsection]`, `confection` will parse that into a nested structure, placing subsection within section.
-3. References to registry functions. If a key starts with `@`, `confection` will interpret its value as the name of a
-   function registry, load the function registered for that name and pass in the rest of the block as arguments. If type
-   hints are available on the function, the argument values (and return value of the function) will be validated against
-   them. This lets you express complex configurations, like a training pipeline where `batch_size` is populated by a
-   function that yields floats.
+1. JSON-formatted values. `confection` passes all values through `json.loads` to
+   interpret them. You can use atomic values like strings, floats, integers or
+   booleans, or you can use complex objects such as lists or maps.
+2. Structured sections. `confection` uses a dot notation to build nested
+   sections. If you have a section named `[section.subsection]`, `confection`
+   will parse that into a nested structure, placing subsection within section.
+3. References to registry functions. If a key starts with `@`, `confection` will
+   interpret its value as the name of a function registry, load the function
+   registered for that name and pass in the rest of the block as arguments. If
+   type hints are available on the function, the argument values (and return
+   value of the function) will be validated against them. This lets you express
+   complex configurations, like a training pipeline where `batch_size` is
+   populated by a function that yields floats.
 
-There’s no pre-defined scheme you have to follow; how you set up the top-level sections is up to you. At the end of
-it, you’ll receive a dictionary with the values that you can use in your script – whether it’s complete initialized
+There’s no pre-defined scheme you have to follow; how you set up the top-level
+sections is up to you. At the end of it, you’ll receive a dictionary with the
+values that you can use in your script – whether it’s complete initialized
 functions, or just basic settings.
 
-For instance, let’s say you want to define a new optimizer. You'd define its arguments in `config.cfg` like so:
+For instance, let’s say you want to define a new optimizer. You'd define its
+arguments in `config.cfg` like so:
 
 ```ini
 [optimizer]
@@ -134,10 +146,11 @@ resolved = registry.resolve(config)
 optimizer = resolved["optimizer"]  # MyCoolOptimizer(learn_rate=0.001, gamma=1e-08)
 ```
 
-Under the hood, `confection` will look up the `"my_cool_optimizer.v1"` function in the "optimizers" registry and then
-call it with the arguments `learn_rate` and `gamma`. If the function has type annotations, it will also validate the
-input. For instance, if `learn_rate` is annotated as a float and the config defines a string, `confection` will raise an
-error.
+Under the hood, `confection` will look up the `"my_cool_optimizer.v1"` function
+in the "optimizers" registry and then call it with the arguments `learn_rate`
+and `gamma`. If the function has type annotations, it will also validate the
+input. For instance, if `learn_rate` is annotated as a float and the config
+defines a string, `confection` will raise an error.
 
 The Thinc documentation offers further information on the configuration system:
 
@@ -153,9 +166,10 @@ The Thinc documentation offers further information on the configuration system:
 
 ### <kbd>class</kbd> `Config`
 
-This class holds the model and training [configuration](https://thinc.ai/docs/usage-config) and can load and save the
-INI-style configuration format from/to a string, file or bytes. The `Config` class is a subclass of `dict` and uses
-Python’s `ConfigParser` under the hood.
+This class holds the model and training
+[configuration](https://thinc.ai/docs/usage-config) and can load and save the
+INI-style configuration format from/to a string, file or bytes. The `Config`
+class is a subclass of `dict` and uses Python’s `ConfigParser` under the hood.
 
 #### <sup><kbd>method</kbd> `Config.__init__`</sup>
 
@@ -292,8 +306,9 @@ Deep-copy the config.
 
 #### <sup><kbd>method</kbd> `Config.interpolate`</sup>
 
-Interpolate variables like `${section.value}` or `${section.subsection}` and return a copy of the config with interpolated
-values. Can be used if a config is loaded with `interpolate=False`, e.g. via `Config.from_str`.
+Interpolate variables like `${section.value}` or `${section.subsection}` and
+return a copy of the config with interpolated values. Can be used if a config is
+loaded with `interpolate=False`, e.g. via `Config.from_str`.
 
 ```python
 from confection import Config
@@ -317,15 +332,19 @@ print(config["training"])  # {'dropout': 0.2}}
 
 ##### <sup><kbd>method</kbd> `Config.merge`</sup>
 
-Deep-merge two config objects, using the current config as the default. Only merges sections and dictionaries and not
-other values like lists. Values that are provided in the updates are overwritten in the base config, and any new values
-or sections are added. If a config value is a variable like `${section.key}` (e.g. if the config was loaded with
-`interpolate=False)`, **the variable is preferred**, even if the updates provide a different value. This ensures that variable
-references aren’t destroyed by a merge.
+Deep-merge two config objects, using the current config as the default. Only
+merges sections and dictionaries and not other values like lists. Values that
+are provided in the updates are overwritten in the base config, and any new
+values or sections are added. If a config value is a variable like
+`${section.key}` (e.g. if the config was loaded with `interpolate=False)`, **the
+variable is preferred**, even if the updates provide a different value. This
+ensures that variable references aren’t destroyed by a merge.
 
-> :warning: Note that blocks that refer to registered functions using the `@` syntax are only merged if they are
-> referring to the same functions. Otherwise, merging could easily produce invalid configs, since different functions
-> can take different arguments. If a block refers to a different function, it’s overwritten.
+> :warning: Note that blocks that refer to registered functions using the `@`
+> syntax are only merged if they are referring to the same functions. Otherwise,
+> merging could easily produce invalid configs, since different functions can
+> take different arguments. If a block refers to a different function, it’s
+> overwritten.
 
 ```python
 from confection import Config
