@@ -18,8 +18,7 @@ import copy
 import re
 import warnings
 
-from .structures import SimpleFrozenDict, SimpleFrozenList
-from .util import Decorator
+from .util import Decorator, SimpleFrozenDict, SimpleFrozenList
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
