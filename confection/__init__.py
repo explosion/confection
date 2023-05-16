@@ -18,6 +18,7 @@ import copy
 import re
 import warnings
 
+from .structures import SimpleFrozenDict, SimpleFrozenList
 from .util import Decorator
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
