@@ -273,8 +273,6 @@ class Config(dict):
         # NOTE: This currently can't handle uninterpolated values like [${x.y}]!
         if isinstance(result, str) and VARIABLE_RE.search(value):
             result = value
-        if isinstance(result, list):
-            return [self._interpret_value(v) for v in result]
         return result
 
     def _get_section_ref(self, value: Any, *, parent: List[str] = []) -> Any:
