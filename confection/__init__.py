@@ -8,8 +8,7 @@ from configparser import NoSectionError, NoOptionError, InterpolationDepthError
 from configparser import ParsingError
 from pathlib import Path
 from pydantic import BaseModel, create_model, ValidationError, Extra
-from pydantic.main import ModelMetaclass
-from pydantic.fields import ModelField
+from pydantic.fields import FieldInfo
 import srsly
 import catalogue
 import inspect
@@ -668,13 +667,13 @@ def alias_generator(name: str) -> str:
     return name
 
 
-def copy_model_field(field: ModelField, type_: Any) -> ModelField:
+def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
     """
-    return ModelField(
+    return FieldInfo(
         name=field.name,
-        type_=type_,
+        annotation=type_,
         class_validators=field.class_validators,
         model_config=field.model_config,
         default=field.default,
@@ -829,12 +828,12 @@ class registry:
                 value = overrides[key_parent]
                 config[key] = value
             if cls.is_promise(value):
-                if key in schema.__fields__ and not resolve:
+                if key in schema.model_fields and not resolve:
                     # If we're not resolving the config, make sure that the field
                     # expecting the promise is typed Any so it doesn't fail
                     # validation if it doesn't receive the function return value
-                    field = schema.__fields__[key]
-                    schema.__fields__[key] = copy_model_field(field, Any)
+                    field = schema.model_fields[key]
+                    schema.model_fields[key] = copy_model_field(field, Any)
                 promise_schema = cls.make_promise_schema(value, resolve=resolve)
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -869,10 +868,10 @@ class registry:
                     validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
-                if key in schema.__fields__:
-                    field = schema.__fields__[key]
-                    field_type = field.type_
-                    if not isinstance(field.type_, ModelMetaclass):
+                if key in schema.model_fields:
+                    field = schema.model_fields[key]
+                    field_type = field.annotation
+                    if field_type is None or not issubclass(field_type, BaseModel):
                         # If we don't have a pydantic schema and just a type
                         field_type = EmptySchema
                 filled[key], validation[v_key], final[key] = cls._fill(
@@ -900,21 +899,21 @@ class registry:
         exclude = []
         if validate:
             try:
-                result = schema.parse_obj(validation)
+                result = schema.model_validate(validation)
             except ValidationError as e:
                 raise ConfigValidationError(
                     config=config, errors=e.errors(), parent=parent
                 ) from None
         else:
             # Same as parse_obj, but without validation
-            result = schema.construct(**validation)
+            result = schema.model_construct(**validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
             if schema.Config.extra in (Extra.forbid, Extra.ignore):
-                fields = schema.__fields__.keys()
-                exclude = [k for k in result.__fields_set__ if k not in fields]
+                fields = schema.model_fields.keys()
+                exclude = [k for k in result.model_fields_set if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
-        validation.update(result.dict(exclude=exclude_validation))
+        validation.update(result.model_dump(exclude=exclude_validation))
         filled, final = cls._update_from_parsed(validation, filled, final)
         if exclude:
             filled = {k: v for k, v in filled.items() if k not in exclude}

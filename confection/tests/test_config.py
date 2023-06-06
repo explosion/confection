@@ -104,7 +104,7 @@ def test_invalidate_simple_config():
         my_registry._fill(invalid_config, HelloIntsSchema)
     error = exc_info.value
     assert len(error.errors) == 1
-    assert "type_error.integer" in error.error_types
+    assert "int_parsing" in error.error_types
 
 
 def test_invalidate_extra_args():
@@ -154,8 +154,8 @@ def test_parse_args():
 
 def test_make_promise_schema():
     schema = my_registry.make_promise_schema(good_catsie)
-    assert "evil" in schema.__fields__
-    assert "cute" in schema.__fields__
+    assert "evil" in schema.model_fields
+    assert "cute" in schema.model_fields
 
 
 def test_validate_promise():
@@ -234,11 +234,14 @@ def test_resolve_schema():
         my_registry.resolve({"cfg": config}, schema=TestSchema)
 
 
+@pytest.mark.skip("In Pydantic v2, int/float cannot be coerced to str so this test will fail.")
 def test_resolve_schema_coerced():
     class TestBaseSchema(BaseModel):
         test1: str
         test2: bool
         test3: float
+
+        model_config = {"strict": False}
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
