@@ -8,6 +8,7 @@ from types import GeneratorType
 import pickle
 
 from pydantic import BaseModel, StrictFloat, PositiveInt, constr
+from pydantic.fields import Field
 from pydantic.types import StrictBool
 
 from confection import ConfigValidationError, Config
@@ -331,7 +332,7 @@ def test_validation_custom_types():
     def complex_args(
         rate: StrictFloat,
         steps: PositiveInt = 10,  # type: ignore
-        log_level: constr(regex="(DEBUG|INFO|WARNING|ERROR)") = "ERROR",
+        log_level: str = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)"),
     ):
         return None
 

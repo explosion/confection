@@ -909,7 +909,7 @@ class registry:
             result = schema.model_construct(**validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
-            if schema.Config.extra in (Extra.forbid, Extra.ignore):
+            if schema.model_config.get("extra", Extra.forbid) in (Extra.forbid, Extra.ignore):
                 fields = schema.model_fields.keys()
                 exclude = [k for k in result.model_fields_set if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
