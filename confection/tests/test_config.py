@@ -66,16 +66,14 @@ class HelloIntsSchema(BaseModel):
     hello: int
     world: int
 
-    class Config:
-        extra = "forbid"
+    model_config = {"extra": "forbid"}
 
 
 class DefaultsSchema(BaseModel):
     required: int
     optional: str = "default value"
 
-    class Config:
-        extra = "forbid"
+    model_config = {"extra": "forbid"}
 
 
 class ComplexSchema(BaseModel):
@@ -217,8 +215,7 @@ def test_resolve_schema():
         one: PositiveInt
         two: TestBaseSubSchema
 
-        class Config:
-            extra = "forbid"
+        model_config = {"extra": "forbid"}
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
@@ -1208,8 +1205,7 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        class Config:
-            extra = "forbid"
+        model_config = {"extra": "forbid"}
 
     class TestSchema(BaseModel):
         cfg: TestSchemaContent
@@ -1230,8 +1226,7 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        class Config:
-            extra = "allow"
+        model_config = {"extra": "allow"}
 
     class TestSchema2(BaseModel):
         cfg: TestSchemaContent2
@@ -1255,9 +1250,9 @@ def test_config_validation_error_custom():
     assert e1.show_config is True
     assert len(e1.errors) == 1
     assert e1.errors[0]["loc"] == ("world",)
-    assert e1.errors[0]["msg"] == "value is not a valid integer"
-    assert e1.errors[0]["type"] == "type_error.integer"
-    assert e1.error_types == set(["type_error.integer"])
+    assert e1.errors[0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
+    assert e1.errors[0]["type"] == "int_parsing"
+    assert e1.error_types == {"int_parsing"}
     # Create a new error with overrides
     title = "Custom error"
     desc = "Some error description here"
@@ -1287,7 +1282,7 @@ def test_config_fill_without_resolve():
     assert filled["catsie"]["cute"] is True
     with pytest.raises(ConfigValidationError):
         my_registry.resolve(config, schema=BaseSchema)
-    filled2 = my_registry.fill(config, schema=BaseSchema)
+    filled2 = my_registry.fill(config, schema=BaseSchema, validate=False)
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"

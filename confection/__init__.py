@@ -1,7 +1,7 @@
 from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, cast
+from typing import Iterable, Sequence, Set, cast
 from types import GeneratorType
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
 from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
 from configparser import NoSectionError, NoOptionError, InterpolationDepthError
@@ -671,15 +671,9 @@ def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
     """
-    return FieldInfo(
-        name=field.name,
-        annotation=type_,
-        class_validators=field.class_validators,
-        model_config=field.model_config,
-        default=field.default,
-        default_factory=field.default_factory,
-        required=field.required,
-    )
+    field_info = copy.deepcopy(field)
+    field_info.annotation = type_
+    return field_info
 
 
 class EmptySchema(BaseModel):
@@ -807,6 +801,7 @@ class registry:
         resolve: bool = True,
         parent: str = "",
         overrides: Dict[str, Dict[str, Any]] = {},
+        resolved_object_keys: Set[str] = set()
     ) -> Tuple[
         Union[Dict[str, Any], Config], Union[Dict[str, Any], Config], Dict[str, Any]
     ]:
@@ -842,6 +837,7 @@ class registry:
                     resolve=resolve,
                     parent=key_parent,
                     overrides=overrides,
+                    resolved_object_keys=resolved_object_keys
                 )
                 reg_name, func_name = cls.get_constructor(final[key])
                 args, kwargs = cls.parse_args(final[key])
@@ -853,6 +849,9 @@ class registry:
                     # We don't want to try/except this and raise our own error
                     # here, because we want the traceback if the function fails.
                     getter_result = getter(*args, **kwargs)
+
+                    if isinstance(getter_result, BaseModel) or is_dataclass(getter_result):
+                        resolved_object_keys.add(key)
                 else:
                     # We're not resolving and calling the function, so replace
                     # the getter_result with a Promise class
@@ -909,11 +908,27 @@ class registry:
             result = schema.model_construct(**validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
-            if schema.model_config.get("extra", Extra.forbid) in (Extra.forbid, Extra.ignore):
+            if schema.model_config.get("extra", "forbid") in ("forbid", "ignore"):
                 fields = schema.model_fields.keys()
                 exclude = [k for k in result.model_fields_set if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
-        validation.update(result.model_dump(exclude=exclude_validation))
+        # Do a shallow serialization first
+        # If any of the sub-objects are Pydantic models, first check if they
+        # were resolved earlier from a registry. If they weren't resolved
+        # they are part of a nested schema and need to be serialized with
+        # model.dict()
+        # Allows for returning Pydantic models from a registered function
+        shallow_result_dict = dict(result)
+        if result.model_extra is not None:
+            shallow_result_dict.update(result.model_extra)
+        result_dict = {}
+        for k, v in shallow_result_dict.items():
+            if k in exclude_validation:
+                continue
+            result_dict[k] = v
+            if isinstance(v, BaseModel) and k not in resolved_object_keys:
+                result_dict[k] = v.model_dump()
+        validation.update(result_dict)
         filled, final = cls._update_from_parsed(validation, filled, final)
         if exclude:
             filled = {k: v for k, v in filled.items() if k not in exclude}
