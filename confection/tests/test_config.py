@@ -1398,7 +1398,7 @@ def test_warn_single_quotes():
     cfg = Config().from_str(str_cfg)
 
 
-@pytest.mark.skip(reason="Behavior will be fixed in future PR")
+@pytest.mark.xfail
 def test_parse_strings_interpretable_as_ints():
     """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
     cfg = Config().from_str(f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3""")
