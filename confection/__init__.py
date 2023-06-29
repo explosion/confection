@@ -11,7 +11,6 @@ from pydantic import BaseModel, create_model, ValidationError, Extra
 from pydantic.main import ModelMetaclass
 from pydantic.fields import ModelField
 import srsly
-import catalogue
 import inspect
 import io
 import copy
