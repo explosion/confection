@@ -1283,7 +1283,7 @@ def test_config_fill_without_resolve():
     assert filled["catsie"]["cute"] is True
     with pytest.raises(ConfigValidationError):
         my_registry.resolve(config, schema=BaseSchema)
-    filled2 = my_registry.fill(config, schema=BaseSchema)
+    filled2 = my_registry.fill(config, schema=BaseSchema, validate=False)
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"
