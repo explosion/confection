@@ -20,7 +20,7 @@ from pydantic.types import StrictBool
 import catalogue
 import confection
 
-FloatOrSeq = Union[float, List[float], Generator]
+FloatOrSeq = Union[float, Iterable[float]]
 InT = TypeVar("InT")
 OutT = TypeVar("OutT")
 

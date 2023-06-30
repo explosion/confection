@@ -1,6 +1,5 @@
 from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, Set, cast
-from types import GeneratorType
+from typing import Iterable, Iterator, Sequence, Set, cast
 from dataclasses import dataclass, is_dataclass
 from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
 from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
@@ -674,6 +673,10 @@ def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     return field_info
 
 
+def _safe_is_subclass(cls: type, expected: type) -> bool:
+    return inspect.isclass(cls) and issubclass(cls, BaseModel)
+
+
 class EmptySchema(BaseModel):
     model_config = {
         "extra": "allow",
@@ -860,17 +863,12 @@ class registry:
                     )
                 validation[v_key] = getter_result
                 final[key] = getter_result
-                if isinstance(validation[v_key], GeneratorType):
-                    # If value is a generator we can't validate type without
-                    # consuming it (which doesn't work if it's infinite – see
-                    # schedule for examples). So we skip it.
-                    validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
                 if key in schema.model_fields:
                     field = schema.model_fields[key]
                     field_type = field.annotation
-                    if field_type is None or not issubclass(field_type, BaseModel):
+                    if field_type is None or not _safe_is_subclass(field_type, BaseModel):
                         # If we don't have a pydantic schema and just a type
                         field_type = EmptySchema
                 filled[key], validation[v_key], final[key] = cls._fill(
@@ -889,9 +887,7 @@ class registry:
             else:
                 filled[key] = value
                 # Prevent pydantic from consuming generator if part of a union
-                validation[v_key] = (
-                    value if not isinstance(value, GeneratorType) else []
-                )
+                validation[v_key] = value
                 final[key] = value
         # Now that we've filled in all of the promises, update with defaults
         # from schema, and validate if validation is enabled
@@ -965,7 +961,7 @@ class registry:
                 final[key] = value
             elif (
                 value != final[key] or not isinstance(type(value), type(final[key]))
-            ) and not isinstance(final[key], GeneratorType):
+            ):
                 final[key] = value
         return filled, final
 

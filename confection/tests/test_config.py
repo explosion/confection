@@ -3,8 +3,7 @@ import platform
 
 import catalogue
 import pytest
-from typing import Dict, Optional, Iterable, Callable, Any, Union, List, Tuple
-from types import GeneratorType
+from typing import Dict, Optional, Iterator, Iterable, Callable, Any, Union, List, Tuple
 import pickle
 
 from pydantic import BaseModel, StrictFloat, PositiveInt
@@ -581,10 +580,10 @@ def test_validate_generator():
 
     cfg = {"@schedules": "test_schedule.v2"}
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v2")
-    def test_optimizer2(rate: Generator) -> Generator:
+    def test_optimizer2(rate: Iterator) -> Iterator:
         return rate
 
     cfg = {
@@ -592,10 +591,10 @@ def test_validate_generator():
         "rate": {"@schedules": "test_schedule.v2"},
     }
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v3")
-    def test_optimizer3(schedules: Dict[str, Generator]) -> Generator:
+    def test_optimizer3(schedules: Dict[str, Iterator]) -> Iterator:
         return schedules["rate"]
 
     cfg = {
@@ -603,10 +602,10 @@ def test_validate_generator():
         "schedules": {"rate": {"@schedules": "test_schedule.v2"}},
     }
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v4")
-    def test_optimizer4(*schedules: Generator) -> Generator:
+    def test_optimizer4(*schedules: Iterator) -> Iterator:
         return schedules[0]
 
 
