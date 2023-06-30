@@ -867,10 +867,8 @@ class registry:
                 field_type = EmptySchema
                 if key in schema.model_fields:
                     field = schema.model_fields[key]
-                    field_type = field.annotation
-                    if field_type is None or not _safe_is_subclass(field_type, BaseModel):
-                        # If we don't have a pydantic schema and just a type
-                        field_type = EmptySchema
+                    if field.annotation is not None and _safe_is_subclass(field.annotation, BaseModel):
+                        field_type = field.annotation
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
                     field_type,
