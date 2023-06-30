@@ -675,15 +675,17 @@ def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
 
 
 class EmptySchema(BaseModel):
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
+    model_config = {
+        "extra": "allow",
+        "arbitrary_types_allowed": True
+    }
 
 
-class _PromiseSchemaConfig:
-    extra = "forbid"
-    arbitrary_types_allowed = True
-    alias_generator = alias_generator
+_promise_schema_config = {
+    "extra": "forbid",
+    "arbitrary_types_allowed": True,
+    "alias_generator": alias_generator
+}
 
 
 @dataclass
@@ -902,13 +904,14 @@ class registry:
                     config=config, errors=e.errors(), parent=parent
                 ) from None
         else:
-            # Same as parse_obj, but without validation
-            result = schema.model_construct(**validation)
+            # Same as model_validate, but without validation
+            fields_set = set(schema.model_fields.keys())
+            result = schema.model_construct(fields_set, **validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
             if schema.model_config.get("extra", "forbid") in ("forbid", "ignore"):
-                fields = schema.model_fields.keys()
-                exclude = [k for k in result.model_fields_set if k not in fields]
+                fields = result.model_fields_set
+                exclude = [k for k in dict(result).keys() if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         # Do a shallow serialization first
         # If any of the sub-objects are Pydantic models, first check if they
@@ -1055,7 +1058,7 @@ class registry:
             else:
                 name = RESERVED_FIELDS.get(param.name, param.name)
                 sig_args[name] = (annotation, default)
-        sig_args["__config__"] = _PromiseSchemaConfig
+        sig_args["__config__"] = _promise_schema_config
         return create_model("ArgModel", **sig_args)
 
 

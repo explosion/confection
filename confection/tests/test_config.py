@@ -7,7 +7,7 @@ from typing import Dict, Optional, Iterable, Callable, Any, Union, List, Tuple
 from types import GeneratorType
 import pickle
 
-from pydantic import BaseModel, StrictFloat, PositiveInt, constr
+from pydantic import BaseModel, StrictFloat, PositiveInt
 from pydantic.fields import Field
 from pydantic.types import StrictBool
 
@@ -1205,7 +1205,9 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        model_config = {"extra": "forbid"}
+        model_config = {
+            "extra": "forbid",
+        }
 
     class TestSchema(BaseModel):
         cfg: TestSchemaContent
@@ -1282,7 +1284,7 @@ def test_config_fill_without_resolve():
     assert filled["catsie"]["cute"] is True
     with pytest.raises(ConfigValidationError):
         my_registry.resolve(config, schema=BaseSchema)
-    filled2 = my_registry.fill(config, schema=BaseSchema, validate=False)
+    filled2 = my_registry.fill(config, schema=BaseSchema)
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"
