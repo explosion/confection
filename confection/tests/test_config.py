@@ -1395,3 +1395,10 @@ def test_warn_single_quotes():
     commands = some'thing
     """
     cfg = Config().from_str(str_cfg)
+
+
+def test_parse_strings_interpretable_as_ints():
+    """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
+    cfg = Config().from_str(f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3""")
+    assert cfg["a"]["foo"] == [3, "003", "y"]
+    assert cfg["b"]["bar"] == 3
