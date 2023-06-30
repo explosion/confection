@@ -35,7 +35,6 @@ jobs:
 
       - name: Run mypy
         run: python -m mypy confection
-        if: matrix.python_version != '3.6'
 
       - name: Delete source directory
         run: rm -rf confection
