@@ -584,7 +584,7 @@ def test_validate_generator():
     assert isinstance(result, GeneratorType)
 
     @my_registry.optimizers("test_optimizer.v2")
-    def test_optimizer2(rate: Generator) -> Generator:
+    def test_optimizer2(rate: Iterable[float]) -> Iterable[float]:
         return rate
 
     cfg = {
@@ -595,7 +595,7 @@ def test_validate_generator():
     assert isinstance(result, GeneratorType)
 
     @my_registry.optimizers("test_optimizer.v3")
-    def test_optimizer3(schedules: Dict[str, Generator]) -> Generator:
+    def test_optimizer3(schedules: Dict[str, Iterable[float]]) -> Iterable[float]:
         return schedules["rate"]
 
     cfg = {
@@ -606,7 +606,7 @@ def test_validate_generator():
     assert isinstance(result, GeneratorType)
 
     @my_registry.optimizers("test_optimizer.v4")
-    def test_optimizer4(*schedules: Generator) -> Generator:
+    def test_optimizer4(*schedules: Iterable[float]) -> Iterable[float]:
         return schedules[0]
 
 
