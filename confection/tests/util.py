@@ -10,17 +10,17 @@ from typing import (
     Iterable,
     List,
     Union,
-    Generator,
     Generic,
     TypeVar,
     Optional,
 )
+from pydantic import BaseModel
 from pydantic.types import StrictBool
 
 import catalogue
 import confection
 
-FloatOrSeq = Union[float, List[float], Generator]
+FloatOrSeq = Union[float, Iterable[float]]
 InT = TypeVar("InT")
 OutT = TypeVar("OutT")
 
@@ -82,6 +82,30 @@ def Adam(
 
     @dataclasses.dataclass
     class Optimizer:
+        learn_rate: FloatOrSeq
+        beta1: FloatOrSeq
+        beta2: FloatOrSeq
+        use_averages: bool
+
+    return Optimizer(
+        learn_rate=learn_rate, beta1=beta1, beta2=beta2, use_averages=use_averages
+    )
+
+
+@my_registry.optimizers("Adam.pydantic.v1")
+def Adam_pydantic(
+    learn_rate: FloatOrSeq = 0.001,
+    *,
+    beta1: FloatOrSeq = 0.001,
+    beta2: FloatOrSeq = 0.001,
+    use_averages: bool = True,
+):
+    """
+    Mocks optimizer generation. Note that the returned object is not actually an optimizer. This function is merely used
+    to illustrate how to use the function registry, e.g. with thinc.
+    """
+
+    class Optimizer(BaseModel):
         learn_rate: FloatOrSeq
         beta1: FloatOrSeq
         beta2: FloatOrSeq

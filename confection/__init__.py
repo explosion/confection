@@ -1,7 +1,5 @@
 from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, Set, TypeVar, cast
-from types import GeneratorType
-from inspect import isclass
+from typing import Iterable, Sequence, Set, cast
 from dataclasses import dataclass, is_dataclass
 from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
 from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
@@ -276,8 +274,6 @@ class Config(dict):
         # NOTE: This currently can't handle uninterpolated values like [${x.y}]!
         if isinstance(result, str) and VARIABLE_RE.search(value):
             result = value
-        if isinstance(result, list):
-            return [self._interpret_value(v) for v in result]
         return result
 
     def _get_section_ref(self, value: Any, *, parent: List[str] = []) -> Any:
@@ -700,24 +696,34 @@ def model_validate(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
     return Schema.model_validate(**data) if PYDANTIC_V2 else Schema(**data)
 
 
-def model_construct(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
-    return Schema.model_construct(**data) if PYDANTIC_V2 else Schema.construct(**data)
+def model_construct(Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]) -> _ModelT:
+    return Schema.model_construct(fields_set, **data) if PYDANTIC_V2 else Schema.construct(fields_set, **data)
 
 
 def model_dump(instance: BaseModel) -> Dict[str, Any]:
     return instance.model_dump() if PYDANTIC_V2 else instance.dict()
 
 
+def get_field_annotation(field: FieldInfo) -> Type:
+    return field.annotation if PYDANTIC_V2 else field.type_
+
+
+def _safe_is_subclass(cls: type, expected: type) -> bool:
+    return inspect.isclass(cls) and issubclass(cls, BaseModel)
+
+
 class EmptySchema(BaseModel):
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
+    model_config = {
+        "extra": "allow",
+        "arbitrary_types_allowed": True
+    }
 
 
-class _PromiseSchemaConfig:
-    extra = "forbid"
-    arbitrary_types_allowed = True
-    alias_generator = alias_generator
+_promise_schema_config = {
+    "extra": "forbid",
+    "arbitrary_types_allowed": True,
+    "alias_generator": alias_generator
+}
 
 
 @dataclass
@@ -902,10 +908,8 @@ class registry:
                 fields = schema.model_fields if PYDANTIC_V2 else schema.__fields__
                 if key in fields:
                     field = fields[key]
-                    field_type = field.annotation if PYDANTIC_V2 else field.type_
-                    if field_type is None or not (isclass(field_type) and issubclass(field_type, BaseModel)):
-                        # If we don't have a pydantic schema and just a type
-                        field_type = EmptySchema
+                    if field.annotation is not None and _safe_is_subclass(field.annotation, BaseModel):
+                        field_type = field.annotation
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
                     field_type,
@@ -921,6 +925,8 @@ class registry:
                     final[key] = list(final[key].values())
             else:
                 filled[key] = value
+                # Prevent pydantic from consuming generator if part of a union
+                # TODO: reset for v1 pydantic
                 validation[v_key] = value
                 final[key] = value
         # Now that we've filled in all of the promises, update with defaults
@@ -935,15 +941,14 @@ class registry:
                     config=config, errors=e.errors(), parent=parent
                 ) from None
         else:
-            # Same as parse_obj, but without validation
-            result = schema.model_construct(**validation) if PYDANTIC_V2 else schema.construct(**validation)
+            # Same as model_validate, but without validation
+            fields_set = set(schema.model_fields.keys())
+            result = model_construct(schema, fields_set, validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
-            extra_attr = get_model_config_extra(schema)
-            if extra_attr in ("forbid", "ignore"):
-                fields = schema.model_fields.keys() if PYDANTIC_V2 else schema.__fields__.keys()
-                result_fields_set = result.model_fields_set if PYDANTIC_V2 else result.__fields_set__
-                exclude = [k for k in result_fields_set if k not in fields]
+            if get_model_config_extra(schema) in ("forbid", "extra"):
+                fields = result.model_fields_set
+                exclude = [k for k in dict(result).keys() if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         # Do a shallow serialization first
         # If any of the sub-objects are Pydantic models, first check if they
@@ -997,7 +1002,7 @@ class registry:
                 final[key] = value
             elif (
                 value != final[key] or not isinstance(type(value), type(final[key]))
-            ) and not isinstance(final[key], GeneratorType):
+            ):
                 final[key] = value
         return filled, final
 
@@ -1090,7 +1095,7 @@ class registry:
             else:
                 name = RESERVED_FIELDS.get(param.name, param.name)
                 sig_args[name] = (annotation, default)
-        sig_args["__config__"] = _PromiseSchemaConfig
+        sig_args["__config__"] = _promise_schema_config
         return create_model("ArgModel", **sig_args)
 
 

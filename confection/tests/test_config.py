@@ -3,11 +3,10 @@ import platform
 
 import catalogue
 import pytest
-from typing import Dict, Optional, Iterable, Callable, Any, Union, List, Tuple
-from types import GeneratorType
+from typing import Dict, Optional, Iterator, Iterable, Callable, Any, Union, List, Tuple
 import pickle
 
-from pydantic import BaseModel, StrictFloat, PositiveInt, constr
+from pydantic import BaseModel, StrictFloat, PositiveInt
 from pydantic.fields import Field
 from pydantic.types import StrictBool
 
@@ -47,9 +46,24 @@ width = ${pipeline.classifier.model:token_vector_width}
 
 """
 
-OPTIMIZER_CFG = """
+OPTIMIZER_DATACLASS_CFG = """
 [optimizer]
 @optimizers = "Adam.v1"
+beta1 = 0.9
+beta2 = 0.999
+use_averages = true
+
+[optimizer.learn_rate]
+@schedules = "warmup_linear.v1"
+initial_rate = 0.1
+warmup_steps = 10000
+total_steps = 100000
+"""
+
+
+OPTIMIZER_PYDANTIC_CFG = """
+[optimizer]
+@optimizers = "Adam.pydantic.v1"
 beta1 = 0.9
 beta2 = 0.999
 use_averages = true
@@ -262,17 +276,19 @@ def test_read_config():
     assert cfg["pipeline"]["classifier"]["model"]["embedding"]["width"] == 128
 
 
-def test_optimizer_config():
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+def test_optimizer_config(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     optimizer = my_registry.resolve(cfg, validate=True)["optimizer"]
     assert optimizer.beta1 == 0.9
 
 
-def test_config_to_str():
-    cfg = Config().from_str(OPTIMIZER_CFG)
-    assert cfg.to_str().strip() == OPTIMIZER_CFG.strip()
-    cfg = Config({"optimizer": {"foo": "bar"}}).from_str(OPTIMIZER_CFG)
-    assert cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+def test_config_to_str(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
+    assert cfg.to_str().strip() == optimizer_cfg_str.strip()
+    cfg = Config({"optimizer": {"foo": "bar"}}).from_str(optimizer_cfg_str)
+    assert cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
 def test_config_to_str_creates_intermediate_blocks():
@@ -288,28 +304,30 @@ bar = 1
     )
 
 
-def test_config_roundtrip_bytes():
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+def test_config_roundtrip_bytes(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     cfg_bytes = cfg.to_bytes()
     new_cfg = Config().from_bytes(cfg_bytes)
-    assert new_cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+    assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
-def test_config_roundtrip_disk():
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+def test_config_roundtrip_disk(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     with make_tempdir() as path:
         cfg_path = path / "config.cfg"
         cfg.to_disk(cfg_path)
         new_cfg = Config().from_disk(cfg_path)
-    assert new_cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+    assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
-
-def test_config_roundtrip_disk_respects_path_subclasses(pathy_fixture):
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+def test_config_roundtrip_disk_respects_path_subclasses(pathy_fixture, optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     cfg_path = pathy_fixture / "config.cfg"
     cfg.to_disk(cfg_path)
     new_cfg = Config().from_disk(cfg_path)
-    assert new_cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+    assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
 def test_config_to_str_invalid_defaults():
@@ -581,10 +599,14 @@ def test_validate_generator():
 
     cfg = {"@schedules": "test_schedule.v2"}
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v2")
+<<<<<<< HEAD
     def test_optimizer2(rate: Iterable[float]) -> Iterable[float]:
+=======
+    def test_optimizer2(rate: Iterator) -> Iterator:
+>>>>>>> ca99729924effddcd0b05c7a5471447a56b1a09d
         return rate
 
     cfg = {
@@ -592,10 +614,14 @@ def test_validate_generator():
         "rate": {"@schedules": "test_schedule.v2"},
     }
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v3")
+<<<<<<< HEAD
     def test_optimizer3(schedules: Dict[str, Iterable[float]]) -> Iterable[float]:
+=======
+    def test_optimizer3(schedules: Dict[str, Iterator]) -> Iterator:
+>>>>>>> ca99729924effddcd0b05c7a5471447a56b1a09d
         return schedules["rate"]
 
     cfg = {
@@ -603,10 +629,14 @@ def test_validate_generator():
         "schedules": {"rate": {"@schedules": "test_schedule.v2"}},
     }
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v4")
+<<<<<<< HEAD
     def test_optimizer4(*schedules: Iterable[float]) -> Iterable[float]:
+=======
+    def test_optimizer4(*schedules: Iterator) -> Iterator:
+>>>>>>> ca99729924effddcd0b05c7a5471447a56b1a09d
         return schedules[0]
 
 
@@ -1205,7 +1235,9 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        model_config = {"extra": "forbid"}
+        model_config = {
+            "extra": "forbid",
+        }
 
     class TestSchema(BaseModel):
         cfg: TestSchemaContent
@@ -1395,3 +1427,10 @@ def test_warn_single_quotes():
     commands = some'thing
     """
     cfg = Config().from_str(str_cfg)
+
+
+def test_parse_strings_interpretable_as_ints():
+    """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
+    cfg = Config().from_str(f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3""")
+    assert cfg["a"]["foo"] == [3, "003", "y"]
+    assert cfg["b"]["bar"] == 3
