@@ -1,5 +1,5 @@
 from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, Set, cast
+from typing import Iterable, Sequence, Set, TypeVar, cast
 from dataclasses import dataclass, is_dataclass
 from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
 from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
@@ -708,6 +708,25 @@ def get_field_annotation(field: FieldInfo) -> Type:
     return field.annotation if PYDANTIC_V2 else field.type_
 
 
+def get_model_fields(Schema: Union[Type[BaseModel], BaseModel]) -> Dict[str, FieldInfo]:
+    return Schema.model_fields if PYDANTIC_V2 else Schema.__fields__
+
+
+def get_model_fields_set(Schema: Union[Type[BaseModel], BaseModel]) -> Set[str]:
+    return Schema.model_fields_set if PYDANTIC_V2 else Schema.__fields_set__
+
+
+def get_model_extra(model: BaseModel) -> Dict[str, FieldInfo]:
+    return model.model_extra if PYDANTIC_V2 else {}
+
+
+def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
+    if PYDANTIC_V2:
+        Schema.model_fields[key] = field
+    else:
+        Schema.__fields__[key] = field
+
+
 def _safe_is_subclass(cls: type, expected: type) -> bool:
     return inspect.isclass(cls) and issubclass(cls, BaseModel)
 
@@ -859,12 +878,13 @@ class registry:
                 value = overrides[key_parent]
                 config[key] = value
             if cls.is_promise(value):
-                if key in schema.model_fields and not resolve:
+                model_fields = get_model_fields(schema)
+                if key in model_fields and not resolve:
                     # If we're not resolving the config, make sure that the field
                     # expecting the promise is typed Any so it doesn't fail
                     # validation if it doesn't receive the function return value
-                    field = schema.model_fields[key]
-                    schema.model_fields[key] = copy_model_field(field, Any)
+                    field = model_fields[key]
+                    set_model_field(schema, key, copy_model_field(field, Any))
                 promise_schema = cls.make_promise_schema(value, resolve=resolve)
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -903,11 +923,12 @@ class registry:
                 #     validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
-                fields = schema.model_fields if PYDANTIC_V2 else schema.__fields__
+                fields = get_model_fields(schema)
                 if key in fields:
                     field = fields[key]
-                    if field.annotation is not None and _safe_is_subclass(field.annotation, BaseModel):
-                        field_type = field.annotation
+                    annotation = get_field_annotation(field)
+                    if annotation is not None and _safe_is_subclass(annotation, BaseModel):
+                        field_type = annotation
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
                     field_type,
@@ -932,7 +953,7 @@ class registry:
         exclude = []
         if validate:
             try:
-                result = schema.model_validate(validation) if PYDANTIC_V2 else schema(**validation)
+                result = model_validate(schema, validation)
             except ValidationError as e:
 
                 raise ConfigValidationError(
@@ -940,12 +961,12 @@ class registry:
                 ) from None
         else:
             # Same as model_validate, but without validation
-            fields_set = set(schema.model_fields.keys())
+            fields_set = set(get_model_fields(schema).keys())
             result = model_construct(schema, fields_set, validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
             if get_model_config_extra(schema) in ("forbid", "extra"):
-                fields = result.model_fields_set
+                fields = get_model_fields_set(result)
                 exclude = [k for k in dict(result).keys() if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         # Do a shallow serialization first
@@ -955,8 +976,8 @@ class registry:
         # model.dict()
         # Allows for returning Pydantic models from a registered function
         shallow_result_dict = dict(result)
-        if result.model_extra is not None:
-            shallow_result_dict.update(result.model_extra)
+        # if result.model_extra is not None:
+        #     shallow_result_dict.update(result.model_extra)
         result_dict = {}
         for k, v in shallow_result_dict.items():
             if k in exclude_validation:

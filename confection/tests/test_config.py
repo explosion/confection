@@ -10,7 +10,7 @@ from pydantic import BaseModel, StrictFloat, PositiveInt
 from pydantic.fields import Field
 from pydantic.types import StrictBool
 
-from confection import ConfigValidationError, Config
+from confection import ConfigValidationError, Config, get_model_fields, PYDANTIC_V2
 from confection.util import Generator, partial
 from confection.tests.util import Cat, my_registry, make_tempdir
 
@@ -76,6 +76,12 @@ total_steps = 100000
 """
 
 
+if PYDANTIC_V2:
+    INT_PARSING_ERROR_TYPE = "int_parsing"
+else:
+    INT_PARSING_ERROR_TYPE = "type_error.integer"
+
+
 class HelloIntsSchema(BaseModel):
     hello: int
     world: int
@@ -119,7 +125,7 @@ def test_invalidate_simple_config():
         my_registry._fill(invalid_config, HelloIntsSchema)
     error = exc_info.value
     assert len(error.errors) == 1
-    assert "int_parsing" in error.error_types
+    assert INT_PARSING_ERROR_TYPE in error.error_types
 
 
 def test_invalidate_extra_args():
@@ -169,8 +175,9 @@ def test_parse_args():
 
 def test_make_promise_schema():
     schema = my_registry.make_promise_schema(good_catsie)
-    assert "evil" in schema.model_fields
-    assert "cute" in schema.model_fields
+    model_fields = get_model_fields(schema)
+    assert "evil" in model_fields
+    assert "cute" in model_fields
 
 
 def test_validate_promise():
@@ -1272,9 +1279,9 @@ def test_config_validation_error_custom():
     assert e1.show_config is True
     assert len(e1.errors) == 1
     assert e1.errors[0]["loc"] == ("world",)
-    assert e1.errors[0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
-    assert e1.errors[0]["type"] == "int_parsing"
-    assert e1.error_types == {"int_parsing"}
+    assert e1.errors[0]["type"] == INT_PARSING_ERROR_TYPE
+    assert e1.error_types == {INT_PARSING_ERROR_TYPE}
+
     # Create a new error with overrides
     title = "Custom error"
     desc = "Some error description here"
