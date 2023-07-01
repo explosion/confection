@@ -602,11 +602,7 @@ def test_validate_generator():
     assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v2")
-<<<<<<< HEAD
     def test_optimizer2(rate: Iterable[float]) -> Iterable[float]:
-=======
-    def test_optimizer2(rate: Iterator) -> Iterator:
->>>>>>> ca99729924effddcd0b05c7a5471447a56b1a09d
         return rate
 
     cfg = {
@@ -617,11 +613,7 @@ def test_validate_generator():
     assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v3")
-<<<<<<< HEAD
     def test_optimizer3(schedules: Dict[str, Iterable[float]]) -> Iterable[float]:
-=======
-    def test_optimizer3(schedules: Dict[str, Iterator]) -> Iterator:
->>>>>>> ca99729924effddcd0b05c7a5471447a56b1a09d
         return schedules["rate"]
 
     cfg = {
@@ -632,11 +624,7 @@ def test_validate_generator():
     assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v4")
-<<<<<<< HEAD
     def test_optimizer4(*schedules: Iterable[float]) -> Iterable[float]:
-=======
-    def test_optimizer4(*schedules: Iterator) -> Iterator:
->>>>>>> ca99729924effddcd0b05c7a5471447a56b1a09d
         return schedules[0]
 
 
