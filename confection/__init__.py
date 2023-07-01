@@ -713,17 +713,15 @@ def _safe_is_subclass(cls: type, expected: type) -> bool:
 
 
 class EmptySchema(BaseModel):
-    model_config = {
-        "extra": "allow",
-        "arbitrary_types_allowed": True
-    }
+    class Config:
+        extra = "allow"
+        arbitrary_types_allowed = True
 
 
-_promise_schema_config = {
-    "extra": "forbid",
-    "arbitrary_types_allowed": True,
-    "alias_generator": alias_generator
-}
+class _PromiseSchemaConfig:
+    extra = "forbid"
+    arbitrary_types_allowed = True
+    alias_generator = alias_generator
 
 
 @dataclass
@@ -1095,7 +1093,7 @@ class registry:
             else:
                 name = RESERVED_FIELDS.get(param.name, param.name)
                 sig_args[name] = (annotation, default)
-        sig_args["__config__"] = _promise_schema_config
+        sig_args["__config__"] = _PromiseSchemaConfig
         return create_model("ArgModel", **sig_args)
 
 

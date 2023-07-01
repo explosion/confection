@@ -80,14 +80,16 @@ class HelloIntsSchema(BaseModel):
     hello: int
     world: int
 
-    model_config = {"extra": "forbid"}
+    class Config:
+        extra = "forbid"
 
 
 class DefaultsSchema(BaseModel):
     required: int
     optional: str = "default value"
 
-    model_config = {"extra": "forbid"}
+    class Config:
+        extra = "forbid"
 
 
 class ComplexSchema(BaseModel):
@@ -1223,9 +1225,8 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        model_config = {
-            "extra": "forbid",
-        }
+        class Config:
+            extra = "forbid"
 
     class TestSchema(BaseModel):
         cfg: TestSchemaContent
@@ -1246,7 +1247,8 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        model_config = {"extra": "allow"}
+        class Config:
+            extra = "allow"
 
     class TestSchema2(BaseModel):
         cfg: TestSchemaContent2
