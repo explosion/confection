@@ -11,7 +11,7 @@ from pydantic.fields import Field
 from pydantic.types import StrictBool
 
 from confection import ConfigValidationError, Config, get_model_fields, PYDANTIC_V2
-from confection.util import Generator, partial
+from confection.util import partial
 from confection.tests.util import Cat, my_registry, make_tempdir
 
 
