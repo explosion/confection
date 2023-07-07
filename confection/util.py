@@ -1,6 +1,8 @@
 import functools
 import sys
 from typing import Any, Callable, Iterator, TypeVar
+from pydantic.version import VERSION as PYDANTIC_VERSION
+
 
 if sys.version_info < (3, 8):
     # Ignoring type for mypy to avoid "Incompatible import" error (https://github.com/python/mypy/issues/4427).
@@ -9,6 +11,7 @@ else:
     from typing import Protocol
 
 _DIn = TypeVar("_DIn")
+PYDANTIC_V2 = PYDANTIC_VERSION.startswith("2.")
 
 
 class Decorator(Protocol):
@@ -33,21 +36,24 @@ def partial(
     return partial_func
 
 
-class Generator(Iterator):
-    """Custom generator type. Used to annotate function arguments that accept
-    generators so they can be validated by pydantic (which doesn't support
-    iterators/iterables otherwise).
-    """
+if PYDANTIC_V2:
+    Generator = Iterator
+else:
+    class Generator(Iterator):
+        """Custom generator type. Used to annotate function arguments that accept
+        generators so they can be validated by pydantic (which doesn't support
+        iterators/iterables otherwise).
+        """
 
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+        @classmethod
+        def __get_validators__(cls):
+            yield cls.validate
 
-    @classmethod
-    def validate(cls, v):
-        if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
-            raise TypeError("not a valid iterator")
-        return v
+        @classmethod
+        def validate(cls, v):
+            if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
+                raise TypeError("not a valid iterator")
+            return v
 
 
 DEFAULT_FROZEN_DICT_ERROR = (

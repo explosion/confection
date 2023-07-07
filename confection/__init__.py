@@ -8,7 +8,6 @@ from configparser import ParsingError
 from pathlib import Path
 from pydantic import BaseModel, create_model, ValidationError, Extra
 from pydantic.fields import FieldInfo
-from pydantic.version import VERSION as PYDANTIC_VERSION
 import srsly
 import catalogue
 from types import GeneratorType
@@ -18,7 +17,7 @@ import copy
 import re
 import warnings
 
-from .util import Decorator, SimpleFrozenDict, SimpleFrozenList
+from .util import Decorator, SimpleFrozenDict, SimpleFrozenList, PYDANTIC_V2
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
@@ -35,7 +34,6 @@ JSON_EXCEPTIONS = ("true", "false", "null")
 # Regex to detect whether a value contains a variable
 VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 
-PYDANTIC_V2 = PYDANTIC_VERSION.startswith("2.")
 
 
 class CustomInterpolation(ExtendedInterpolation):
@@ -923,11 +921,11 @@ class registry:
                     )
                 validation[v_key] = getter_result
                 final[key] = getter_result
-                # if isinstance(validation[v_key], GeneratorType):
+                if isinstance(validation[v_key], GeneratorType):
                     # If value is a generator we can't validate type without
                     # consuming it (which doesn't work if it's infinite – see
                     # schedule for examples). So we skip it.
-                    # validation[v_key] = []
+                    validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
                 fields = get_model_fields(schema)
@@ -952,8 +950,9 @@ class registry:
             else:
                 filled[key] = value
                 # Prevent pydantic from consuming generator if part of a union
-                # TODO: reset for v1 pydantic
-                validation[v_key] = value
+                validation[v_key] = (
+                    value if not isinstance(value, GeneratorType) else []
+                )
                 final[key] = value
         # Now that we've filled in all of the promises, update with defaults
         # from schema, and validate if validation is enabled
@@ -1025,9 +1024,11 @@ class registry:
             # Check numpy first, just in case. Use stringified type so that numpy dependency can be ditched.
             elif str(type(value)) == "<class 'numpy.ndarray'>":
                 final[key] = value
+            elif isinstance(value, BaseModel) and isinstance(final[key], BaseModel):
+                final[key] = value
             elif (
                 value != final[key] or not isinstance(type(value), type(final[key]))
-            ):
+            ) and not isinstance(final[key], GeneratorType):
                 final[key] = value
         return filled, final
 

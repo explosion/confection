@@ -255,14 +255,15 @@ def test_resolve_schema():
         my_registry.resolve({"cfg": config}, schema=TestSchema)
 
 
-@pytest.mark.skip("In Pydantic v2, int/float cannot be coerced to str so this test will fail.")
+@pytest.mark.skipif(PYDANTIC_V2, reason="In Pydantic v2, int/float cannot be coerced to str so this test will fail.")
 def test_resolve_schema_coerced():
     class TestBaseSchema(BaseModel):
         test1: str
         test2: bool
         test3: float
 
-        model_config = {"strict": False}
+        class Config:
+            strict = False
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
