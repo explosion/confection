@@ -74,7 +74,9 @@ jobs:
           python -m pip install -U pydantic==1.10.*
 
       - name: Run tests for Pydantic v1
-        run: python -m pytest --pyargs confection
+        run: |
+          python -c "import pydantic; print(pydantic.VERSION)"
+          python -m pytest --pyargs confection
 
       - name: Install test requirements with Pydantic v2
         run: |
@@ -82,7 +84,9 @@ jobs:
           python -m pip install -U pydantic
 
       - name: Run tests for Pydantic v2
-        run: python -m pytest --pyargs confection
+        run: |
+          python -c "import pydantic; print(pydantic.VERSION)"
+          python -m pytest --pyargs confection
 
       - name: Test for import conflicts with hypothesis
         run: |
