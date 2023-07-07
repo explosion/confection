@@ -691,7 +691,7 @@ _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 def model_validate(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
-    return Schema.model_validate(**data) if PYDANTIC_V2 else Schema(**data)
+    return Schema.model_validate(data) if PYDANTIC_V2 else Schema(**data)
 
 
 def model_construct(Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]) -> _ModelT:
