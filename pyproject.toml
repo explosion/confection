@@ -3,3 +3,9 @@ requires = [
   "setuptools",
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error",
+    "ignore:^.*Support for class-based `config` is deprecated, use ConfigDict instead.*:DeprecationWarning"
+]

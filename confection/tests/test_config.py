@@ -10,8 +10,8 @@ from pydantic import BaseModel, StrictFloat, PositiveInt
 from pydantic.fields import Field
 from pydantic.types import StrictBool
 
-from confection import ConfigValidationError, Config
-from confection.util import Generator, partial
+from confection import ConfigValidationError, Config, get_model_fields, PYDANTIC_V2
+from confection.util import partial
 from confection.tests.util import Cat, my_registry, make_tempdir
 
 
@@ -76,18 +76,26 @@ total_steps = 100000
 """
 
 
+if PYDANTIC_V2:
+    INT_PARSING_ERROR_TYPE = "int_parsing"
+else:
+    INT_PARSING_ERROR_TYPE = "type_error.integer"
+
+
 class HelloIntsSchema(BaseModel):
     hello: int
     world: int
 
-    model_config = {"extra": "forbid"}
+    class Config:
+        extra = "forbid"
 
 
 class DefaultsSchema(BaseModel):
     required: int
     optional: str = "default value"
 
-    model_config = {"extra": "forbid"}
+    class Config:
+        extra = "forbid"
 
 
 class ComplexSchema(BaseModel):
@@ -117,7 +125,7 @@ def test_invalidate_simple_config():
         my_registry._fill(invalid_config, HelloIntsSchema)
     error = exc_info.value
     assert len(error.errors) == 1
-    assert "int_parsing" in error.error_types
+    assert INT_PARSING_ERROR_TYPE in error.error_types
 
 
 def test_invalidate_extra_args():
@@ -167,8 +175,9 @@ def test_parse_args():
 
 def test_make_promise_schema():
     schema = my_registry.make_promise_schema(good_catsie)
-    assert "evil" in schema.model_fields
-    assert "cute" in schema.model_fields
+    model_fields = get_model_fields(schema)
+    assert "evil" in model_fields
+    assert "cute" in model_fields
 
 
 def test_validate_promise():
@@ -246,14 +255,15 @@ def test_resolve_schema():
         my_registry.resolve({"cfg": config}, schema=TestSchema)
 
 
-@pytest.mark.skip("In Pydantic v2, int/float cannot be coerced to str so this test will fail.")
+@pytest.mark.skipif(PYDANTIC_V2, reason="In Pydantic v2, int/float cannot be coerced to str so this test will fail.")
 def test_resolve_schema_coerced():
     class TestBaseSchema(BaseModel):
         test1: str
         test2: bool
         test3: float
 
-        model_config = {"strict": False}
+        class Config:
+            strict = False
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
@@ -276,7 +286,7 @@ def test_read_config():
     assert cfg["pipeline"]["classifier"]["model"]["embedding"]["width"] == 128
 
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG], ids=["dataclasses", "pydantic"])
 def test_optimizer_config(optimizer_cfg_str: str):
     cfg = Config().from_str(optimizer_cfg_str)
     optimizer = my_registry.resolve(cfg, validate=True)["optimizer"]
@@ -344,10 +354,16 @@ def test_config_to_str_invalid_defaults():
 
 
 def test_validation_custom_types():
+    if PYDANTIC_V2:
+        log_field = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)")
+    else:
+        log_field = Field("ERROR", regex="(DEBUG|INFO|WARNING|ERROR)")
+
+
     def complex_args(
         rate: StrictFloat,
-        steps: PositiveInt = 10,  # type: ignore
-        log_level: str = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)"),
+        steps: PositiveInt = 10,
+        log_level: str = log_field,
     ):
         return None
 
@@ -602,7 +618,7 @@ def test_validate_generator():
     assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v2")
-    def test_optimizer2(rate: Iterator) -> Iterator:
+    def test_optimizer2(rate: Iterable[float]) -> Iterable[float]:
         return rate
 
     cfg = {
@@ -613,7 +629,7 @@ def test_validate_generator():
     assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v3")
-    def test_optimizer3(schedules: Dict[str, Iterator]) -> Iterator:
+    def test_optimizer3(schedules: Dict[str, Iterable[float]]) -> Iterable[float]:
         return schedules["rate"]
 
     cfg = {
@@ -624,7 +640,7 @@ def test_validate_generator():
     assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v4")
-    def test_optimizer4(*schedules: Iterator) -> Iterator:
+    def test_optimizer4(*schedules: Iterable[float]) -> Iterable[float]:
         return schedules[0]
 
 
@@ -1223,9 +1239,8 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        model_config = {
-            "extra": "forbid",
-        }
+        class Config:
+            extra = "forbid"
 
     class TestSchema(BaseModel):
         cfg: TestSchemaContent
@@ -1246,7 +1261,8 @@ def test_config_fill_extra_fields():
         a: str
         b: int
 
-        model_config = {"extra": "allow"}
+        class Config:
+            extra = "allow"
 
     class TestSchema2(BaseModel):
         cfg: TestSchemaContent2
@@ -1270,9 +1286,9 @@ def test_config_validation_error_custom():
     assert e1.show_config is True
     assert len(e1.errors) == 1
     assert e1.errors[0]["loc"] == ("world",)
-    assert e1.errors[0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
-    assert e1.errors[0]["type"] == "int_parsing"
-    assert e1.error_types == {"int_parsing"}
+    assert e1.errors[0]["type"] == INT_PARSING_ERROR_TYPE
+    assert e1.error_types == {INT_PARSING_ERROR_TYPE}
+
     # Create a new error with overrides
     title = "Custom error"
     desc = "Some error description here"
