@@ -665,7 +665,7 @@ def alias_generator(name: str) -> str:
     return name
 
 
-def copy_model_field(field: FieldInfo, type_: Type) -> FieldInfo:
+def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
     """
@@ -673,13 +673,13 @@ def copy_model_field(field: FieldInfo, type_: Type) -> FieldInfo:
     if PYDANTIC_V2:
         field_info.annotation = type_
     else:
-        field_info.type_ = type_
+        field_info.type_ = type_  # type: ignore
     return field_info
 
 
 def get_model_config_extra(model: Type[BaseModel]) -> str:
     if PYDANTIC_V2:
-        extra = model.model_config.get("extra", "forbid")
+        extra = str(model.model_config.get("extra", "forbid"))
     else:
         extra = str(model.Config.extra) or "forbid"
     assert isinstance(extra, str)
@@ -703,26 +703,26 @@ def model_dump(instance: BaseModel) -> Dict[str, Any]:
 
 
 def get_field_annotation(field: FieldInfo) -> Type:
-    return field.annotation if PYDANTIC_V2 else field.type_
+    return field.annotation if PYDANTIC_V2 else field.type_  # type: ignore
 
 
 def get_model_fields(Schema: Union[Type[BaseModel], BaseModel]) -> Dict[str, FieldInfo]:
-    return Schema.model_fields if PYDANTIC_V2 else Schema.__fields__
+    return Schema.model_fields if PYDANTIC_V2 else Schema.__fields__  # type: ignore
 
 
 def get_model_fields_set(Schema: Union[Type[BaseModel], BaseModel]) -> Set[str]:
-    return Schema.model_fields_set if PYDANTIC_V2 else Schema.__fields_set__
+    return Schema.model_fields_set if PYDANTIC_V2 else Schema.__fields_set__  # type: ignore
 
 
 def get_model_extra(model: BaseModel) -> Dict[str, FieldInfo]:
-    return model.model_extra if PYDANTIC_V2 else {}
+    return model.model_extra or {} if PYDANTIC_V2 else {}
 
 
 def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
     if PYDANTIC_V2:
         Schema.model_fields[key] = field
     else:
-        Schema.__fields__[key] = field
+        Schema.__fields__[key] = field  # type: ignore
 
 
 def update_from_model_extra(shallow_result_dict: Dict[str, Any], result: BaseModel) -> None:
@@ -888,7 +888,8 @@ class registry:
                     # expecting the promise is typed Any so it doesn't fail
                     # validation if it doesn't receive the function return value
                     field = model_fields[key]
-                    set_model_field(schema, key, copy_model_field(field, Any))
+                    new_field = copy_model_field(field, Any)
+                    set_model_field(schema, key, new_field)
                 promise_schema = cls.make_promise_schema(value, resolve=resolve)
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -971,8 +972,8 @@ class registry:
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
             if get_model_config_extra(schema) in ("forbid", "extra"):
-                fields = get_model_fields_set(result)
-                exclude = [k for k in dict(result).keys() if k not in fields]
+                result_field_names = get_model_fields_set(result)
+                exclude = [k for k in dict(result).keys() if k not in result_field_names]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         # Do a shallow serialization first
         # If any of the sub-objects are Pydantic models, first check if they
