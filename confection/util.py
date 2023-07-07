@@ -36,24 +36,21 @@ def partial(
     return partial_func
 
 
-if PYDANTIC_V2:
-    Generator = Iterator
-else:
-    class Generator(Iterator):
-        """Custom generator type. Used to annotate function arguments that accept
-        generators so they can be validated by pydantic (which doesn't support
-        iterators/iterables otherwise).
-        """
+class Generator(Iterator):
+    """Custom generator type. Used to annotate function arguments that accept
+    generators so they can be validated by pydantic (which doesn't support
+    iterators/iterables otherwise).
+    """
 
-        @classmethod
-        def __get_validators__(cls):
-            yield cls.validate
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
 
-        @classmethod
-        def validate(cls, v):
-            if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
-                raise TypeError("not a valid iterator")
-            return v
+    @classmethod
+    def validate(cls, v):
+        if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
+            raise TypeError("not a valid iterator")
+        return v
 
 
 DEFAULT_FROZEN_DICT_ERROR = (

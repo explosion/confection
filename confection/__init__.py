@@ -1,16 +1,16 @@
 from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, Set, TypeVar, cast
+from typing import Iterable, Sequence, Set, TypeVar, TYPE_CHECKING, cast
+from types import GeneratorType
 from dataclasses import dataclass, is_dataclass
 from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
 from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
 from configparser import NoSectionError, NoOptionError, InterpolationDepthError
 from configparser import ParsingError
 from pathlib import Path
-from pydantic import BaseModel, create_model, ValidationError, Extra
+from pydantic import BaseModel, create_model, ValidationError
 from pydantic.fields import FieldInfo
 import srsly
 import catalogue
-from types import GeneratorType
 import inspect
 import io
 import copy
@@ -33,7 +33,6 @@ SECTION_PREFIX = "__SECTION__:"
 JSON_EXCEPTIONS = ("true", "false", "null")
 # Regex to detect whether a value contains a variable
 VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
-
 
 
 class CustomInterpolation(ExtendedInterpolation):
@@ -666,7 +665,7 @@ def alias_generator(name: str) -> str:
     return name
 
 
-def copy_model_field(field: Union["FieldInfo", "ModelField"], type_: Type) -> Union["FieldInfo", "ModelField"]:
+def copy_model_field(field: FieldInfo, type_: Type) -> FieldInfo:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
     """
