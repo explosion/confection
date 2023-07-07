@@ -285,7 +285,7 @@ def test_read_config():
     assert cfg["pipeline"]["classifier"]["model"]["embedding"]["width"] == 128
 
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG], ids=["dataclasses", "pydantic"])
 def test_optimizer_config(optimizer_cfg_str: str):
     cfg = Config().from_str(optimizer_cfg_str)
     optimizer = my_registry.resolve(cfg, validate=True)["optimizer"]
@@ -353,10 +353,16 @@ def test_config_to_str_invalid_defaults():
 
 
 def test_validation_custom_types():
+    if PYDANTIC_V2:
+        log_field = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)")
+    else:
+        log_field = Field("ERROR", regex="(DEBUG|INFO|WARNING|ERROR)")
+
+
     def complex_args(
         rate: StrictFloat,
-        steps: PositiveInt = 10,  # type: ignore
-        log_level: str = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)"),
+        steps: PositiveInt = 10,
+        log_level: str = log_field,
     ):
         return None
 

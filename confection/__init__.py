@@ -11,6 +11,7 @@ from pydantic.fields import FieldInfo
 from pydantic.version import VERSION as PYDANTIC_VERSION
 import srsly
 import catalogue
+from types import GeneratorType
 import inspect
 import io
 import copy
@@ -727,6 +728,12 @@ def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
         Schema.__fields__[key] = field
 
 
+def update_from_model_extra(shallow_result_dict: Dict[str, Any], result: BaseModel) -> None:
+    if PYDANTIC_V2:
+        if result.model_extra is not None:
+            shallow_result_dict.update(result.model_extra)
+
+
 def _safe_is_subclass(cls: type, expected: type) -> bool:
     return inspect.isclass(cls) and issubclass(cls, BaseModel)
 
@@ -917,10 +924,10 @@ class registry:
                 validation[v_key] = getter_result
                 final[key] = getter_result
                 # if isinstance(validation[v_key], GeneratorType):
-                #     # If value is a generator we can't validate type without
-                #     # consuming it (which doesn't work if it's infinite – see
-                #     # schedule for examples). So we skip it.
-                #     validation[v_key] = []
+                    # If value is a generator we can't validate type without
+                    # consuming it (which doesn't work if it's infinite – see
+                    # schedule for examples). So we skip it.
+                    # validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
                 fields = get_model_fields(schema)
@@ -976,8 +983,7 @@ class registry:
         # model.dict()
         # Allows for returning Pydantic models from a registered function
         shallow_result_dict = dict(result)
-        # if result.model_extra is not None:
-        #     shallow_result_dict.update(result.model_extra)
+        update_from_model_extra(shallow_result_dict, result)
         result_dict = {}
         for k, v in shallow_result_dict.items():
             if k in exclude_validation:
