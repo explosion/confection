@@ -47,8 +47,8 @@ jobs:
           python -m pip install -U -r requirements.txt
           python -m build --sdist
 
-      # - name: Run mypy
-      #   run: python -m mypy confection
+      - name: Run mypy
+        run: python -m mypy confection/__init__.py confection/util.py
 
       - name: Delete source directory
         run: rm -rf confection
