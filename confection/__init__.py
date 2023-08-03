@@ -411,11 +411,7 @@ class Config(dict):
                 if hasattr(value, "items"):
                     # Reference to a function with no arguments, serialize
                     # inline as a dict and don't create new section
-                    if (
-                        registry.is_promise(value)
-                        and len(value) == 1
-                        and is_kwarg
-                    ):
+                    if registry.is_promise(value) and len(value) == 1 and is_kwarg:
                         flattened.set(section_name, key, try_dump_json(value, node))
                     else:
                         queue.append((path + (key,), value))
@@ -686,7 +682,6 @@ def get_model_config_extra(model: Type[BaseModel]) -> str:
     return extra
 
 
-
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
@@ -694,7 +689,9 @@ def model_validate(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
     return Schema.model_validate(data) if PYDANTIC_V2 else Schema(**data)  # type: ignore
 
 
-def model_construct(Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]) -> _ModelT:
+def model_construct(
+    Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]
+) -> _ModelT:
     return Schema.model_construct(fields_set, **data) if PYDANTIC_V2 else Schema.construct(fields_set, **data)  # type: ignore
 
 
@@ -725,7 +722,9 @@ def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
         Schema.__fields__[key] = field  # type: ignore
 
 
-def update_from_model_extra(shallow_result_dict: Dict[str, Any], result: BaseModel) -> None:
+def update_from_model_extra(
+    shallow_result_dict: Dict[str, Any], result: BaseModel
+) -> None:
     if PYDANTIC_V2:
         if result.model_extra is not None:  # type: ignore
             shallow_result_dict.update(result.model_extra)  # type: ignore
@@ -860,7 +859,7 @@ class registry:
         resolve: bool = True,
         parent: str = "",
         overrides: Dict[str, Dict[str, Any]] = {},
-        resolved_object_keys: Set[str] = set()
+        resolved_object_keys: Set[str] = set(),
     ) -> Tuple[
         Union[Dict[str, Any], Config], Union[Dict[str, Any], Config], Dict[str, Any]
     ]:
@@ -898,7 +897,7 @@ class registry:
                     resolve=resolve,
                     parent=key_parent,
                     overrides=overrides,
-                    resolved_object_keys=resolved_object_keys
+                    resolved_object_keys=resolved_object_keys,
                 )
                 reg_name, func_name = cls.get_constructor(final[key])
                 args, kwargs = cls.parse_args(final[key])
@@ -911,7 +910,9 @@ class registry:
                     # here, because we want the traceback if the function fails.
                     getter_result = getter(*args, **kwargs)
 
-                    if isinstance(getter_result, BaseModel) or is_dataclass(getter_result):
+                    if isinstance(getter_result, BaseModel) or is_dataclass(
+                        getter_result
+                    ):
                         resolved_object_keys.add(key)
                 else:
                     # We're not resolving and calling the function, so replace
@@ -932,7 +933,9 @@ class registry:
                 if key in fields:
                     field = fields[key]
                     annotation = get_field_annotation(field)
-                    if annotation is not None and _safe_is_subclass(annotation, BaseModel):
+                    if annotation is not None and _safe_is_subclass(
+                        annotation, BaseModel
+                    ):
                         field_type = annotation
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -973,7 +976,9 @@ class registry:
             # manually because .construct doesn't parse anything
             if get_model_config_extra(schema) in ("forbid", "extra"):
                 result_field_names = get_model_fields_set(result)
-                exclude = [k for k in dict(result).keys() if k not in result_field_names]
+                exclude = [
+                    k for k in dict(result).keys() if k not in result_field_names
+                ]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         # Do a shallow serialization first
         # If any of the sub-objects are Pydantic models, first check if they

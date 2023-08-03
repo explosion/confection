@@ -256,7 +256,10 @@ def test_resolve_schema():
         my_registry.resolve({"cfg": config}, schema=TestSchema)
 
 
-@pytest.mark.skipif(PYDANTIC_V2, reason="In Pydantic v2, int/float cannot be coerced to str so this test will fail.")
+@pytest.mark.skipif(
+    PYDANTIC_V2,
+    reason="In Pydantic v2, int/float cannot be coerced to str so this test will fail.",
+)
 def test_resolve_schema_coerced():
     class TestBaseSchema(BaseModel):
         test1: str
@@ -287,14 +290,20 @@ def test_read_config():
     assert cfg["pipeline"]["classifier"]["model"]["embedding"]["width"] == 128
 
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG], ids=["dataclasses", "pydantic"])
+@pytest.mark.parametrize(
+    "optimizer_cfg_str",
+    [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG],
+    ids=["dataclasses", "pydantic"],
+)
 def test_optimizer_config(optimizer_cfg_str: str):
     cfg = Config().from_str(optimizer_cfg_str)
     optimizer = my_registry.resolve(cfg, validate=True)["optimizer"]
     assert optimizer.beta1 == 0.9
 
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
 def test_config_to_str(optimizer_cfg_str: str):
     cfg = Config().from_str(optimizer_cfg_str)
     assert cfg.to_str().strip() == optimizer_cfg_str.strip()
@@ -315,7 +324,9 @@ bar = 1
     )
 
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
 def test_config_roundtrip_bytes(optimizer_cfg_str: str):
     cfg = Config().from_str(optimizer_cfg_str)
     cfg_bytes = cfg.to_bytes()
@@ -323,7 +334,9 @@ def test_config_roundtrip_bytes(optimizer_cfg_str: str):
     assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
 def test_config_roundtrip_disk(optimizer_cfg_str: str):
     cfg = Config().from_str(optimizer_cfg_str)
     with make_tempdir() as path:
@@ -332,8 +345,13 @@ def test_config_roundtrip_disk(optimizer_cfg_str: str):
         new_cfg = Config().from_disk(cfg_path)
     assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
-@pytest.mark.parametrize("optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG])
-def test_config_roundtrip_disk_respects_path_subclasses(pathy_fixture, optimizer_cfg_str: str):
+
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
+def test_config_roundtrip_disk_respects_path_subclasses(
+    pathy_fixture, optimizer_cfg_str: str
+):
     cfg = Config().from_str(optimizer_cfg_str)
     cfg_path = pathy_fixture / "config.cfg"
     cfg.to_disk(cfg_path)
@@ -359,7 +377,6 @@ def test_validation_custom_types():
         log_field = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)")
     else:
         log_field = Field("ERROR", regex="(DEBUG|INFO|WARNING|ERROR)")
-
 
     def complex_args(
         rate: StrictFloat,
@@ -1436,6 +1453,8 @@ def test_warn_single_quotes():
 
 def test_parse_strings_interpretable_as_ints():
     """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
-    cfg = Config().from_str(f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3""")
+    cfg = Config().from_str(
+        f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3"""
+    )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3
