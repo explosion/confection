@@ -10,7 +10,6 @@ from pathlib import Path
 from pydantic import BaseModel, create_model, ValidationError
 from pydantic.fields import FieldInfo
 import srsly
-import catalogue
 import inspect
 import io
 import copy
