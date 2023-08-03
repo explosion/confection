@@ -19,8 +19,8 @@ import warnings
 
 from .util import Decorator, SimpleFrozenDict, SimpleFrozenList, PYDANTIC_V2
 
-if TYPE_CHECKING and PYDANTIC_V2:
-    from pydantic.v1.fields import ModelField
+if PYDANTIC_V2:
+    from pydantic.v1.fields import ModelField  # type: ignore
 else:
     from pydantic.fields import ModelField
 
