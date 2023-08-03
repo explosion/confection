@@ -671,7 +671,7 @@ def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     """
     field_info = copy.deepcopy(field)
     if PYDANTIC_V2:
-        field_info.annotation = type_
+        field_info.annotation = type_  # type: ignore
     else:
         field_info.type_ = type_  # type: ignore
     return field_info
@@ -679,9 +679,9 @@ def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
 
 def get_model_config_extra(model: Type[BaseModel]) -> str:
     if PYDANTIC_V2:
-        extra = str(model.model_config.get("extra", "forbid"))
+        extra = str(model.model_config.get("extra", "forbid"))  # type: ignore
     else:
-        extra = str(model.Config.extra) or "forbid"
+        extra = str(model.Config.extra) or "forbid"  # type: ignore
     assert isinstance(extra, str)
     return extra
 
@@ -691,15 +691,15 @@ _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 def model_validate(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
-    return Schema.model_validate(data) if PYDANTIC_V2 else Schema(**data)
+    return Schema.model_validate(data) if PYDANTIC_V2 else Schema(**data)  # type: ignore
 
 
 def model_construct(Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]) -> _ModelT:
-    return Schema.model_construct(fields_set, **data) if PYDANTIC_V2 else Schema.construct(fields_set, **data)
+    return Schema.model_construct(fields_set, **data) if PYDANTIC_V2 else Schema.construct(fields_set, **data)  # type: ignore
 
 
 def model_dump(instance: BaseModel) -> Dict[str, Any]:
-    return instance.model_dump() if PYDANTIC_V2 else instance.dict()
+    return instance.model_dump() if PYDANTIC_V2 else instance.dict()  # type: ignore
 
 
 def get_field_annotation(field: FieldInfo) -> Type:
@@ -715,20 +715,20 @@ def get_model_fields_set(Schema: Union[Type[BaseModel], BaseModel]) -> Set[str]:
 
 
 def get_model_extra(model: BaseModel) -> Dict[str, FieldInfo]:
-    return model.model_extra or {} if PYDANTIC_V2 else {}
+    return model.model_extra or {} if PYDANTIC_V2 else {}  # type: ignore
 
 
 def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
     if PYDANTIC_V2:
-        Schema.model_fields[key] = field
+        Schema.model_fields[key] = field  # type: ignore
     else:
         Schema.__fields__[key] = field  # type: ignore
 
 
 def update_from_model_extra(shallow_result_dict: Dict[str, Any], result: BaseModel) -> None:
     if PYDANTIC_V2:
-        if result.model_extra is not None:
-            shallow_result_dict.update(result.model_extra)
+        if result.model_extra is not None:  # type: ignore
+            shallow_result_dict.update(result.model_extra)  # type: ignore
 
 
 def _safe_is_subclass(cls: type, expected: type) -> bool:

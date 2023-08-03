@@ -38,8 +38,15 @@ jobs:
           python -m pip install -U -r requirements.txt
           python -m build --sdist
 
-      - name: Run mypy
-        run: python -m mypy confection
+      - name: Run mypy for Pydantic v2
+        run: |
+          python -m mypy confection
+        if: matrix.python_version != '3.6'
+
+      - name: Run mypy for Pydantic v1
+        run: |
+          python -m pip install -U pydantic==1.10.*
+          python -m mypy confection
         if: matrix.python_version != '3.6'
 
       - name: Delete source directory
