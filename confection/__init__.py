@@ -963,7 +963,6 @@ class registry:
             try:
                 result = model_validate(schema, validation)
             except ValidationError as e:
-
                 raise ConfigValidationError(
                     config=config, errors=e.errors(), parent=parent
                 ) from None

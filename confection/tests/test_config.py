@@ -1340,6 +1340,7 @@ def test_config_fill_without_resolve():
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"
+
     # With unavailable function
     class BaseSchema2(BaseModel):
         catsie: Any
