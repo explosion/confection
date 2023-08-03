@@ -43,7 +43,7 @@ jobs:
           python -m mypy confection
         if: matrix.python_version != '3.6'
 
-      - name: Run mypy for Pydantic v1
+      - name: Run mypy for Pydantic v1.10
         run: |
           python -m pip install -U pydantic==1.10.*
           python -m mypy confection
@@ -70,7 +70,7 @@ jobs:
       - name: Install test requirements with Pydantic v1
         run: |
           python -m pip install -U -r requirements.txt
-          python -m pip install -U pydantic==1.10.*
+          python -m pip install -U "pydantic<2.0"
 
       - name: Run tests for Pydantic v1
         run: |
