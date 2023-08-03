@@ -2,8 +2,6 @@ name: tests
 
 on:
   push:
-    branches:
-      - main
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
@@ -13,21 +11,14 @@ jobs:
     if: github.repository == 'explosion/confection'
     strategy:
       fail-fast: false
-      # matrix:
-      #   os: [ubuntu-latest, windows-latest, macos-latest]
-      #   python_version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python_version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
         include:
-          - python_version: '3.7'
-            os: ubuntu-latest
-          - python_version: '3.8'
-            os: windows-latest
-          - python_version: '3.11'
-            os: ubuntu-latest
-          - python_version: '3.11'
-            os: windows-latest
-          - python_version: '3.11'
-            os: macos-latest
+          - os: windows-2019
+            python_version: "3.6"
+          - os: ubuntu-20.04
+            python_version: "3.6"
 
     runs-on: ${{ matrix.os }}
 
@@ -48,7 +39,8 @@ jobs:
           python -m build --sdist
 
       - name: Run mypy
-        run: python -m mypy confection/__init__.py confection/util.py
+        run: python -m mypy confection
+        if: matrix.python_version != '3.6'
 
       - name: Delete source directory
         run: rm -rf confection
