@@ -1,8 +1,8 @@
 import functools
 import sys
 from typing import Any, Callable, Iterator, TypeVar
-from pydantic.version import VERSION as PYDANTIC_VERSION
 
+from pydantic.version import VERSION as PYDANTIC_VERSION
 
 if sys.version_info < (3, 8):
     # Ignoring type for mypy to avoid "Incompatible import" error (https://github.com/python/mypy/issues/4427).
