@@ -65,8 +65,15 @@ jobs:
           python -m pip install -U -r requirements.txt
           python -m build --sdist
 
-      - name: Run mypy
-        run: python -m mypy confection
+      - name: Run mypy for Pydantic v2
+        run: |
+          python -m mypy confection
+        if: matrix.python_version != '3.6'
+
+      - name: Run mypy for Pydantic v1.10
+        run: |
+          python -m pip install -U pydantic==1.10.*
+          python -m mypy confection
         if: matrix.python_version != '3.6'
 
       - name: Delete source directory
@@ -87,11 +94,25 @@ jobs:
       - name: Test import
         run: python -c "import confection" -Werror
 
-      - name: Install test requirements
-        run: python -m pip install -U -r requirements.txt
+      - name: Install test requirements with Pydantic v1
+        run: |
+          python -m pip install -U -r requirements.txt
+          python -m pip install -U "pydantic<2.0"
 
-      - name: Run tests
-        run: python -m pytest --pyargs confection -Werror
+      - name: Run tests for Pydantic v1
+        run: |
+          python -c "import pydantic; print(pydantic.VERSION)"
+          python -m pytest --pyargs confection -Werror
+
+      - name: Install test requirements with Pydantic v2
+        run: |
+          python -m pip install -U -r requirements.txt
+          python -m pip install -U pydantic
+
+      - name: Run tests for Pydantic v2
+        run: |
+          python -c "import pydantic; print(pydantic.VERSION)"
+          python -m pytest --pyargs confection -Werror
 
       - name: Test for import conflicts with hypothesis
         run: |

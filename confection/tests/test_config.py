@@ -6,8 +6,13 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import catalogue
 import pytest
-from pydantic import BaseModel, PositiveInt, StrictFloat, constr
-from pydantic.types import StrictBool
+
+try:
+    from pydantic.v1 import BaseModel, PositiveInt, StrictFloat, constr
+    from pydantic.v1.types import StrictBool
+except ImportError:
+    from pydantic import BaseModel, StrictFloat, PositiveInt, constr  # type: ignore
+    from pydantic.types import StrictBool  # type: ignore
 
 from confection import Config, ConfigValidationError
 from confection.tests.util import Cat, make_tempdir, my_registry

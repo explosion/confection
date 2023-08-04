@@ -33,9 +33,15 @@ from typing import (
 )
 
 import srsly
-from pydantic import BaseModel, Extra, ValidationError, create_model
-from pydantic.fields import ModelField
-from pydantic.main import ModelMetaclass
+
+try:
+    from pydantic.v1 import BaseModel, Extra, ValidationError, create_model
+    from pydantic.v1.fields import ModelField
+    from pydantic.v1.main import ModelMetaclass
+except ImportError:
+    from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
+    from pydantic.main import ModelMetaclass  # type: ignore
+    from pydantic.fields import ModelField  # type: ignore
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 
