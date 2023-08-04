@@ -1,19 +1,17 @@
 import inspect
+import pickle
 import platform
+from types import GeneratorType
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import catalogue
 import pytest
-from typing import Dict, Optional, Iterable, Callable, Any, Union, List, Tuple
-from types import GeneratorType
-import pickle
-
-from pydantic import BaseModel, StrictFloat, PositiveInt, constr
+from pydantic import BaseModel, PositiveInt, StrictFloat, constr
 from pydantic.types import StrictBool
 
-from confection import ConfigValidationError, Config
+from confection import Config, ConfigValidationError
+from confection.tests.util import Cat, make_tempdir, my_registry
 from confection.util import Generator, partial
-from confection.tests.util import Cat, my_registry, make_tempdir
-
 
 EXAMPLE_CONFIG = """
 [optimizer]
@@ -328,7 +326,7 @@ def test_validation_custom_types():
     def complex_args(
         rate: StrictFloat,
         steps: PositiveInt = 10,  # type: ignore
-        log_level: constr(regex="(DEBUG|INFO|WARNING|ERROR)") = "ERROR",
+        log_level: constr(regex="(DEBUG|INFO|WARNING|ERROR)") = "ERROR",  # noqa: F821
     ):
         return None
 
@@ -770,7 +768,6 @@ def test_fill_config_dict_return_type():
 
 
 def test_deepcopy_config():
-    numpy = pytest.importorskip("numpy")
     config = Config({"a": 1, "b": {"c": 2, "d": 3}})
     copied = config.copy()
     # Same values but not same object
@@ -1287,6 +1284,7 @@ def test_config_fill_without_resolve():
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"
+
     # With unavailable function
     class BaseSchema2(BaseModel):
         catsie: Any
@@ -1382,24 +1380,26 @@ def test_config_overrides(greeting, value, expected):
 
 
 def test_warn_single_quotes():
-    str_cfg = f"""
+    str_cfg = """
     [project]
     commands = 'do stuff'
     """
 
     with pytest.warns(UserWarning, match="single-quoted"):
-        cfg = Config().from_str(str_cfg)
+        Config().from_str(str_cfg)
 
     # should not warn if single quotes are in the middle
-    str_cfg = f"""
+    str_cfg = """
     [project]
     commands = some'thing
     """
-    cfg = Config().from_str(str_cfg)
+    Config().from_str(str_cfg)
 
 
 def test_parse_strings_interpretable_as_ints():
     """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
-    cfg = Config().from_str(f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3""")
+    cfg = Config().from_str(
+        f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3"""  # noqa: F541
+    )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3
