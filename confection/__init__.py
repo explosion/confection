@@ -1,30 +1,49 @@
-from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, cast
-from types import GeneratorType
+import copy
+import inspect
+import io
+import re
+import warnings
+from configparser import (
+    MAX_INTERPOLATION_DEPTH,
+    ConfigParser,
+    ExtendedInterpolation,
+    InterpolationDepthError,
+    InterpolationMissingOptionError,
+    InterpolationSyntaxError,
+    NoOptionError,
+    NoSectionError,
+    ParsingError,
+)
 from dataclasses import dataclass
-from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
-from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
-from configparser import NoSectionError, NoOptionError, InterpolationDepthError
-from configparser import ParsingError
 from pathlib import Path
+from types import GeneratorType
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
+
+import srsly
 
 try:
-    from pydantic.v1 import BaseModel, create_model, ValidationError, Extra
-    from pydantic.v1.main import ModelMetaclass
+    from pydantic.v1 import BaseModel, Extra, ValidationError, create_model
     from pydantic.v1.fields import ModelField
+    from pydantic.v1.main import ModelMetaclass
 except ImportError:
     from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
     from pydantic.main import ModelMetaclass  # type: ignore
     from pydantic.fields import ModelField  # type: ignore
 
-import srsly
-import inspect
-import io
-import copy
-import re
-import warnings
-
-from .util import Decorator, SimpleFrozenDict, SimpleFrozenList
+from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
@@ -226,7 +245,9 @@ class Config(dict):
                 if part == "*":
                     node = node.setdefault(part, {})
                 elif part not in node:
-                    err_title = f"Error parsing config section. Perhaps a section name is wrong?"
+                    err_title = (
+                        "Error parsing config section. Perhaps a section name is wrong?"
+                    )
                     err = [{"loc": parts, "msg": f"Section '{part}' is not defined"}]
                     raise ConfigValidationError(
                         config=self, errors=err, title=err_title

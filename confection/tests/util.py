@@ -6,22 +6,15 @@ import dataclasses
 import shutil
 import tempfile
 from pathlib import Path
-from typing import (
-    Iterable,
-    List,
-    Union,
-    Generator,
-    Generic,
-    TypeVar,
-    Optional,
-)
+from typing import Generator, Generic, Iterable, List, Optional, TypeVar, Union
+
+import catalogue
 
 try:
     from pydantic.v1.types import StrictBool
 except ImportError:
     from pydantic.types import StrictBool  # type: ignore
 
-import catalogue
 import confection
 
 FloatOrSeq = Union[float, List[float], Generator]
