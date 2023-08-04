@@ -1,23 +1,43 @@
-from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, cast
-from types import GeneratorType
-from dataclasses import dataclass
-from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
-from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
-from configparser import NoSectionError, NoOptionError, InterpolationDepthError
-from configparser import ParsingError
-from pathlib import Path
-from pydantic import BaseModel, create_model, ValidationError, Extra
-from pydantic.main import ModelMetaclass
-from pydantic.fields import ModelField
-import srsly
+import copy
 import inspect
 import io
-import copy
 import re
 import warnings
+from configparser import (
+    MAX_INTERPOLATION_DEPTH,
+    ConfigParser,
+    ExtendedInterpolation,
+    InterpolationDepthError,
+    InterpolationMissingOptionError,
+    InterpolationSyntaxError,
+    NoOptionError,
+    NoSectionError,
+    ParsingError,
+)
+from dataclasses import dataclass
+from pathlib import Path
+from types import GeneratorType
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
-from .util import Decorator, SimpleFrozenDict, SimpleFrozenList
+import srsly
+from pydantic import BaseModel, Extra, ValidationError, create_model
+from pydantic.fields import ModelField
+from pydantic.main import ModelMetaclass
+
+from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
@@ -219,7 +239,7 @@ class Config(dict):
                 if part == "*":
                     node = node.setdefault(part, {})
                 elif part not in node:
-                    err_title = f"Error parsing config section. Perhaps a section name is wrong?"
+                    err_title = "Error parsing config section. Perhaps a section name is wrong?"
                     err = [{"loc": parts, "msg": f"Section '{part}' is not defined"}]
                     raise ConfigValidationError(
                         config=self, errors=err, title=err_title
@@ -411,11 +431,7 @@ class Config(dict):
                 if hasattr(value, "items"):
                     # Reference to a function with no arguments, serialize
                     # inline as a dict and don't create new section
-                    if (
-                        registry.is_promise(value)
-                        and len(value) == 1
-                        and is_kwarg
-                    ):
+                    if registry.is_promise(value) and len(value) == 1 and is_kwarg:
                         flattened.set(section_name, key, try_dump_json(value, node))
                     else:
                         queue.append((path + (key,), value))
