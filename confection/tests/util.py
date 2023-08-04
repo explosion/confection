@@ -15,7 +15,11 @@ from typing import (
     TypeVar,
     Optional,
 )
-from pydantic.types import StrictBool
+
+try:
+    from pydantic.v1.types import StrictBool
+except ImportError:
+    from pydantic.types import StrictBool  # type: ignore
 
 import catalogue
 import confection

@@ -7,8 +7,12 @@ from typing import Dict, Optional, Iterable, Callable, Any, Union, List, Tuple
 from types import GeneratorType
 import pickle
 
-from pydantic import BaseModel, StrictFloat, PositiveInt, constr
-from pydantic.types import StrictBool
+try:
+    from pydantic.v1 import BaseModel, StrictFloat, PositiveInt, constr
+    from pydantic.v1.types import StrictBool
+except ImportError:
+    from pydantic import BaseModel, StrictFloat, PositiveInt, constr  # type: ignore
+    from pydantic.types import StrictBool  # type: ignore
 
 from confection import ConfigValidationError, Config
 from confection.util import Generator, partial
@@ -1287,6 +1291,7 @@ def test_config_fill_without_resolve():
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"
+
     # With unavailable function
     class BaseSchema2(BaseModel):
         catsie: Any
@@ -1400,6 +1405,8 @@ def test_warn_single_quotes():
 
 def test_parse_strings_interpretable_as_ints():
     """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
-    cfg = Config().from_str(f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3""")
+    cfg = Config().from_str(
+        f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3"""
+    )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3

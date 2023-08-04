@@ -7,9 +7,16 @@ from configparser import InterpolationMissingOptionError, InterpolationSyntaxErr
 from configparser import NoSectionError, NoOptionError, InterpolationDepthError
 from configparser import ParsingError
 from pathlib import Path
-from pydantic import BaseModel, create_model, ValidationError, Extra
-from pydantic.main import ModelMetaclass
-from pydantic.fields import ModelField
+
+try:
+    from pydantic.v1 import BaseModel, create_model, ValidationError, Extra
+    from pydantic.v1.main import ModelMetaclass
+    from pydantic.v1.fields import ModelField
+except ImportError:
+    from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
+    from pydantic.main import ModelMetaclass  # type: ignore
+    from pydantic.fields import ModelField  # type: ignore
+
 import srsly
 import inspect
 import io
@@ -411,11 +418,7 @@ class Config(dict):
                 if hasattr(value, "items"):
                     # Reference to a function with no arguments, serialize
                     # inline as a dict and don't create new section
-                    if (
-                        registry.is_promise(value)
-                        and len(value) == 1
-                        and is_kwarg
-                    ):
+                    if registry.is_promise(value) and len(value) == 1 and is_kwarg:
                         flattened.set(section_name, key, try_dump_json(value, node))
                     else:
                         queue.append((path + (key,), value))
