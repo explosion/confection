@@ -19,6 +19,12 @@ import warnings
 
 from .util import Decorator, SimpleFrozenDict, SimpleFrozenList, PYDANTIC_V2
 
+if PYDANTIC_V2:
+    from pydantic.v1.fields import ModelField  # type: ignore
+else:
+    from pydantic.fields import ModelField  # type: ignore
+
+
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
 ARGS_FIELD = "*"
@@ -661,16 +667,28 @@ def alias_generator(name: str) -> str:
     return name
 
 
+def _copy_model_field_v1(field: ModelField, type_: Any) -> ModelField:
+    return ModelField(
+        name=field.name,
+        type_=type_,
+        class_validators=field.class_validators,
+        model_config=field.model_config,
+        default=field.default,
+        default_factory=field.default_factory,
+        required=field.required,
+    )
+
+
 def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
     """
-    field_info = copy.deepcopy(field)
     if PYDANTIC_V2:
+        field_info = copy.deepcopy(field)
         field_info.annotation = type_  # type: ignore
+        return field_info
     else:
-        field_info.type_ = type_  # type: ignore
-    return field_info
+        return _copy_model_field_v1(field, type_)  # type: ignore
 
 
 def get_model_config_extra(model: Type[BaseModel]) -> str:
