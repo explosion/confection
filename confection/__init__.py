@@ -22,7 +22,7 @@ from .util import Decorator, SimpleFrozenDict, SimpleFrozenList, PYDANTIC_V2
 if PYDANTIC_V2:
     from pydantic.v1.fields import ModelField  # type: ignore
 else:
-    from pydantic.fields import ModelField
+    from pydantic.fields import ModelField  # type: ignore
 
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
