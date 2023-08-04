@@ -239,7 +239,9 @@ class Config(dict):
                 if part == "*":
                     node = node.setdefault(part, {})
                 elif part not in node:
-                    err_title = "Error parsing config section. Perhaps a section name is wrong?"
+                    err_title = (
+                        "Error parsing config section. Perhaps a section name is wrong?"
+                    )
                     err = [{"loc": parts, "msg": f"Section '{part}' is not defined"}]
                     raise ConfigValidationError(
                         config=self, errors=err, title=err_title
