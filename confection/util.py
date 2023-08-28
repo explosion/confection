@@ -1,5 +1,6 @@
 import functools
 import sys
+from copy import deepcopy
 from typing import Any, Callable, Iterator, TypeVar
 
 if sys.version_info < (3, 8):
@@ -89,6 +90,14 @@ class SimpleFrozenDict(dict):
 
     def update(self, other):
         raise NotImplementedError(self.error)
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memo))
+        return result
 
 
 class SimpleFrozenList(list):
