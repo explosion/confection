@@ -1,9 +1,10 @@
-from pytest import raises
-
-from confection import SimpleFrozenDict, SimpleFrozenList, registry, Config
 import dataclasses
 from typing import Dict
+
 import catalogue
+from pytest import raises
+
+from confection import Config, SimpleFrozenDict, SimpleFrozenList, registry
 
 
 def test_frozen_list():
