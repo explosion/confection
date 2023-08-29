@@ -1,7 +1,8 @@
 import dataclasses
-from typing import Dict
+from typing import Dict, List
 
 import catalogue
+import pytest
 from pytest import raises
 
 from confection import Config, SimpleFrozenDict, SimpleFrozenList, registry
@@ -36,28 +37,28 @@ def test_frozen_dict():
         frozen[10] = 1
 
 
-def test_frozen_dict_deepcopy():
-    """Test whether setting default values for a FrozenDict works within a config, which utilizes deepcopy."""
+@pytest.mark.parametrize("cls", (SimpleFrozenDict, SimpleFrozenList))
+def test_frozen_struct_deepcopy(cls):
+    """Test whether setting default values for a FrozenDict/FrozenList works within a config, which utilizes
+    deepcopy."""
     registry.bar = catalogue.create("confection", "bar", entry_points=False)
 
-    @dataclasses.dataclass
-    class Foo:
-        a: int
+    @registry.bar.register("foo_dict.v1")
+    def make_dict(values: Dict[str, int] = SimpleFrozenDict(x=3)):
+        return values
 
-    # Load the config file from disk, resolve it and fetch the instantiated optimizer object.
-    @registry.bar.register("foo.v1")
-    def make_smth(values: Dict[str, int] = SimpleFrozenDict(x=3)):
-        return Foo(a=3)
+    @registry.bar.register("foo_list.v1")
+    def make_list(values: List[int] = SimpleFrozenList([1, 2, 3])):
+        return values
 
     cfg = Config()
     resolved = registry.resolve(
         cfg.from_str(
-            """
+            f"""
             [something]
-            @bar = "foo.v1"        
+            @bar = "foo_{'dict' if cls == SimpleFrozenDict else 'list'}.v1"        
             """
         )
     )
 
-    assert isinstance(resolved["something"], Foo)
-    assert resolved["something"].a == 3
+    assert isinstance(resolved["something"], Dict if cls == SimpleFrozenDict else List)

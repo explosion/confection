@@ -143,3 +143,6 @@ class SimpleFrozenList(list):
 
     def sort(self, *args, **kwargs):
         raise NotImplementedError(self.error)
+
+    def __deepcopy__(self, memo):
+        return self.__class__(deepcopy(v) for v in self)
