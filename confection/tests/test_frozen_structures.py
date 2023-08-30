@@ -36,7 +36,7 @@ def test_frozen_dict():
         frozen[10] = 1
 
 
-@pytest.mark.parametrize("frozen_type", ('dict', 'list'))
+@pytest.mark.parametrize("frozen_type", ("dict", "list"))
 def test_frozen_struct_deepcopy(frozen_type):
     """Test whether setting default values for a FrozenDict/FrozenList works within a config, which utilizes
     deepcopy."""
@@ -60,4 +60,4 @@ def test_frozen_struct_deepcopy(frozen_type):
         )
     )
 
-    assert isinstance(resolved["something"], Dict if frozen_type == 'dict' else List)
+    assert isinstance(resolved["something"], Dict if frozen_type == "dict" else List)
