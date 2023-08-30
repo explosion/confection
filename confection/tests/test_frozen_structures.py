@@ -36,8 +36,8 @@ def test_frozen_dict():
         frozen[10] = 1
 
 
-@pytest.mark.parametrize("cls", (SimpleFrozenDict, SimpleFrozenList))
-def test_frozen_struct_deepcopy(cls):
+@pytest.mark.parametrize("frozen_type", ('dict', 'list'))
+def test_frozen_struct_deepcopy(frozen_type):
     """Test whether setting default values for a FrozenDict/FrozenList works within a config, which utilizes
     deepcopy."""
     registry.bar = catalogue.create("confection", "bar", entry_points=False)
@@ -55,9 +55,9 @@ def test_frozen_struct_deepcopy(cls):
         cfg.from_str(
             f"""
             [something]
-            @bar = "foo_{'dict' if cls == SimpleFrozenDict else 'list'}.v1"        
+            @bar = "foo_{frozen_type}.v1"        
             """
         )
     )
 
-    assert isinstance(resolved["something"], Dict if cls == SimpleFrozenDict else List)
+    assert isinstance(resolved["something"], Dict if frozen_type == 'dict' else List)
