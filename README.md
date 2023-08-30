@@ -116,7 +116,8 @@ learn_rate = 0.001
 gamma = 1e-8
 ```
 
-To load and parse this configuration:
+To load and parse this configuration using a `catalogue` registry (install
+[`catalogue`](https://github.com/explosion/catalogue) separately):
 
 ```python
 import dataclasses
