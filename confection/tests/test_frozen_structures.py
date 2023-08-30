@@ -1,4 +1,3 @@
-import dataclasses
 from typing import Dict, List
 
 import catalogue
