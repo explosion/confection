@@ -18,7 +18,6 @@ from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from types import GeneratorType
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
