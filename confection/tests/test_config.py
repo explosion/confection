@@ -1,20 +1,19 @@
 # type: ignore
 import inspect
+import pickle
 import platform
+from types import GeneratorType
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 import catalogue
 import pytest
-from typing import Dict, Optional, Iterator, Iterable, Callable, Any, Union, List, Tuple
-import pickle
-
-from pydantic import BaseModel, StrictFloat, PositiveInt
+from pydantic import BaseModel, PositiveInt, StrictFloat
 from pydantic.fields import Field
 from pydantic.types import StrictBool
 
-from confection import ConfigValidationError, Config, get_model_fields, PYDANTIC_V2
-from confection.util import partial
-from confection.tests.util import Cat, my_registry, make_tempdir
-
+from confection import PYDANTIC_V2, Config, ConfigValidationError, get_model_fields
+from confection.tests.util import Cat, make_tempdir, my_registry
+from confection.util import Generator, partial
 
 EXAMPLE_CONFIG = """
 [optimizer]
@@ -823,7 +822,6 @@ def test_fill_config_dict_return_type():
 
 
 def test_deepcopy_config():
-    numpy = pytest.importorskip("numpy")
     config = Config({"a": 1, "b": {"c": 2, "d": 3}})
     copied = config.copy()
     # Same values but not same object
@@ -1436,26 +1434,26 @@ def test_config_overrides(greeting, value, expected):
 
 
 def test_warn_single_quotes():
-    str_cfg = f"""
+    str_cfg = """
     [project]
     commands = 'do stuff'
     """
 
     with pytest.warns(UserWarning, match="single-quoted"):
-        cfg = Config().from_str(str_cfg)
+        Config().from_str(str_cfg)
 
     # should not warn if single quotes are in the middle
-    str_cfg = f"""
+    str_cfg = """
     [project]
     commands = some'thing
     """
-    cfg = Config().from_str(str_cfg)
+    Config().from_str(str_cfg)
 
 
 def test_parse_strings_interpretable_as_ints():
     """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
     cfg = Config().from_str(
-        f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3"""
+        f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3"""  # noqa: F541
     )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3

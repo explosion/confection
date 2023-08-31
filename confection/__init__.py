@@ -1,22 +1,53 @@
-from typing import Union, Dict, Any, Optional, List, Tuple, Callable, Type, Mapping
-from typing import Iterable, Sequence, Set, TypeVar, TYPE_CHECKING, cast
-from types import GeneratorType
-from dataclasses import dataclass, is_dataclass
-from configparser import ConfigParser, ExtendedInterpolation, MAX_INTERPOLATION_DEPTH
-from configparser import InterpolationMissingOptionError, InterpolationSyntaxError
-from configparser import NoSectionError, NoOptionError, InterpolationDepthError
-from configparser import ParsingError
-from pathlib import Path
-from pydantic import BaseModel, create_model, ValidationError
-from pydantic.fields import FieldInfo
-import srsly
+import copy
 import inspect
 import io
-import copy
 import re
 import warnings
+from configparser import (
+    MAX_INTERPOLATION_DEPTH,
+    ConfigParser,
+    ExtendedInterpolation,
+    InterpolationDepthError,
+    InterpolationMissingOptionError,
+    InterpolationSyntaxError,
+    NoOptionError,
+    NoSectionError,
+    ParsingError,
+)
+from dataclasses import dataclass, is_dataclass
+from pathlib import Path
+from types import GeneratorType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
-from .util import Decorator, SimpleFrozenDict, SimpleFrozenList, PYDANTIC_V2
+import catalogue
+import srsly
+from pydantic import BaseModel, ValidationError, create_model
+from pydantic.fields import FieldInfo
+
+from .util import PYDANTIC_V2, Decorator, SimpleFrozenDict, SimpleFrozenList
+
+if PYDANTIC_V2:
+    from pydantic.v1.fields import ModelField  # type: ignore
+else:
+    from pydantic.fields import ModelField  # type: ignore
+
+from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
@@ -218,7 +249,9 @@ class Config(dict):
                 if part == "*":
                     node = node.setdefault(part, {})
                 elif part not in node:
-                    err_title = f"Error parsing config section. Perhaps a section name is wrong?"
+                    err_title = (
+                        "Error parsing config section. Perhaps a section name is wrong?"
+                    )
                     err = [{"loc": parts, "msg": f"Section '{part}' is not defined"}]
                     raise ConfigValidationError(
                         config=self, errors=err, title=err_title
@@ -660,16 +693,28 @@ def alias_generator(name: str) -> str:
     return name
 
 
+def _copy_model_field_v1(field: ModelField, type_: Any) -> ModelField:
+    return ModelField(
+        name=field.name,
+        type_=type_,
+        class_validators=field.class_validators,
+        model_config=field.model_config,
+        default=field.default,
+        default_factory=field.default_factory,
+        required=field.required,
+    )
+
+
 def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
     """
-    field_info = copy.deepcopy(field)
     if PYDANTIC_V2:
+        field_info = copy.deepcopy(field)
         field_info.annotation = type_  # type: ignore
+        return field_info
     else:
-        field_info.type_ = type_  # type: ignore
-    return field_info
+        return _copy_model_field_v1(field, type_)  # type: ignore
 
 
 def get_model_config_extra(model: Type[BaseModel]) -> str:
