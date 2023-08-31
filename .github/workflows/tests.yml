@@ -97,7 +97,7 @@ jobs:
       - name: Install test requirements with Pydantic v1
         run: |
           python -m pip install -U -r requirements.txt
-          python -m pip install -U "pydantic<2.0"
+          python -m pip install -U "pydantic<2.0" "spacy"
 
       - name: Run tests for Pydantic v1
         run: |
@@ -106,7 +106,7 @@ jobs:
 
       - name: Install test requirements with Pydantic v2
         run: |
-          python -m pip install -U -r requirements.txt
+          python -m pip install -U -r requirements.txt spacy
           python -m pip install -U pydantic
 
       - name: Run tests for Pydantic v2
@@ -118,8 +118,3 @@ jobs:
         run: |
           python -m pip install hypothesis
           python -c "import confection; import hypothesis"
-
-      - name: Test with spacy
-        run: |
-          python -m pip install spacy
-          python -m spacy init config -p tagger tagger.cfg
