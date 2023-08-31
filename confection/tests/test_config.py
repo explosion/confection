@@ -1457,3 +1457,14 @@ def test_parse_strings_interpretable_as_ints():
     )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3
+
+
+def test_spacy_init_config():
+    """Regression test to ensure spacy init config works"""
+    try:
+        from spacy.cli import init_config
+    except ImportError:
+        pytest.skip("SpaCy not installed")
+
+    config = init_config(pipeline=["tagger"])
+    assert isinstance(config, Config)
