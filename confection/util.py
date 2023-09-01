@@ -92,12 +92,7 @@ class SimpleFrozenDict(dict):
         raise NotImplementedError(self.error)
 
     def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v in self.__dict__.items():
-            setattr(result, k, deepcopy(v, memo))
-        return result
+        return self.__class__(deepcopy({k: v for k, v in self.items()}))
 
 
 class SimpleFrozenList(list):
