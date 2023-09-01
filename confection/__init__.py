@@ -728,18 +728,37 @@ def get_model_config_extra(model: Type[BaseModel]) -> str:
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
+def _schema_is_pydantic_v2(Schema: Union[Type[BaseModel], BaseModel]) -> bool:
+    """If `model_fields` attr is present, it means we have a schema or instance
+    of a pydantic v2 BaseModel. Even if we're using Pydantic V2, users could still
+    import from `pydantic.v1` and that would break our compat checks.
+    Schema (Union[Type[BaseModel], BaseModel]): Input schema or instance.
+    RETURNS (bool): True if the pydantic model is a v2 model or not
+    """
+    return hasattr(Schema, "model_fields")
+
+
 def model_validate(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
-    return Schema.model_validate(data) if PYDANTIC_V2 else Schema(**data)  # type: ignore
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_validate(data)  # type: ignore
+    else:
+        return Schema.validate(data)  # type: ignore
 
 
 def model_construct(
     Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]
 ) -> _ModelT:
-    return Schema.model_construct(fields_set, **data) if PYDANTIC_V2 else Schema.construct(fields_set, **data)  # type: ignore
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_construct(fields_set, **data)  # type: ignore
+    else:
+        return Schema.construct(fields_set, **data)  # type: ignore
 
 
 def model_dump(instance: BaseModel) -> Dict[str, Any]:
-    return instance.model_dump() if PYDANTIC_V2 else instance.dict()  # type: ignore
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(instance):
+        return instance.model_dump()  # type: ignore
+    else:
+        return instance.dict()
 
 
 def get_field_annotation(field: FieldInfo) -> Type:
@@ -747,19 +766,28 @@ def get_field_annotation(field: FieldInfo) -> Type:
 
 
 def get_model_fields(Schema: Union[Type[BaseModel], BaseModel]) -> Dict[str, FieldInfo]:
-    return Schema.model_fields if PYDANTIC_V2 else Schema.__fields__  # type: ignore
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_fields  # type: ignore
+    else:
+        return Schema.__fields__  # type: ignore
 
 
 def get_model_fields_set(Schema: Union[Type[BaseModel], BaseModel]) -> Set[str]:
-    return Schema.model_fields_set if PYDANTIC_V2 else Schema.__fields_set__  # type: ignore
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_fields_set  # type: ignore
+    else:
+        return Schema.__fields_set__  # type: ignore
 
 
-def get_model_extra(model: BaseModel) -> Dict[str, FieldInfo]:
-    return model.model_extra or {} if PYDANTIC_V2 else {}  # type: ignore
+def get_model_extra(instance: BaseModel) -> Dict[str, FieldInfo]:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(instance):
+        return instance.model_extra  # type: ignore
+    else:
+        return {}
 
 
 def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
-    if PYDANTIC_V2:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
         Schema.model_fields[key] = field  # type: ignore
     else:
         Schema.__fields__[key] = field  # type: ignore
@@ -768,7 +796,7 @@ def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
 def update_from_model_extra(
     shallow_result_dict: Dict[str, Any], result: BaseModel
 ) -> None:
-    if PYDANTIC_V2:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(result):
         if result.model_extra is not None:  # type: ignore
             shallow_result_dict.update(result.model_extra)  # type: ignore
 
