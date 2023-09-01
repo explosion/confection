@@ -1,5 +1,6 @@
 import functools
 import sys
+from copy import deepcopy
 from typing import Any, Callable, Iterator, TypeVar
 
 if sys.version_info < (3, 8):
@@ -90,6 +91,9 @@ class SimpleFrozenDict(dict):
     def update(self, other):
         raise NotImplementedError(self.error)
 
+    def __deepcopy__(self, memo):
+        return self.__class__(deepcopy({k: v for k, v in self.items()}))
+
 
 class SimpleFrozenList(list):
     """Wrapper class around a list that lets us raise custom errors if certain
@@ -134,3 +138,6 @@ class SimpleFrozenList(list):
 
     def sort(self, *args, **kwargs):
         raise NotImplementedError(self.error)
+
+    def __deepcopy__(self, memo):
+        return self.__class__(deepcopy(v) for v in self)
