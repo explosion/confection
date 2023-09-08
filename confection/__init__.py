@@ -1068,4 +1068,10 @@ class registry:
         return create_model("ArgModel", **sig_args)
 
 
-__all__ = ["Config", "registry", "ConfigValidationError"]
+__all__ = [
+    "Config",
+    "registry",
+    "ConfigValidationError",
+    "SimpleFrozenDict",
+    "SimpleFrozenList",
+]
