@@ -147,6 +147,11 @@ resolved = registry.resolve(config)
 optimizer = resolved["optimizer"]  # MyCoolOptimizer(learn_rate=0.001, gamma=1e-08)
 ```
 
+> ⚠️ Caution: Type-checkers such as `mypy` will mark adding new attributes to `registry` this way - i. e. 
+> `registry.new_attr = ...` - as errors. This is because a new attribute is added to the class after initialization. If 
+> you are using typecheckers, you can either ignore this (e. g. with `# type: ignore` for `mypy`) or use a typesafe 
+> alternative: instead of `registry.new_attr = ...`, use `setattr(registry, "new_attr", ...)`. 
+
 Under the hood, `confection` will look up the `"my_cool_optimizer.v1"` function
 in the "optimizers" registry and then call it with the arguments `learn_rate`
 and `gamma`. If the function has type annotations, it will also validate the
