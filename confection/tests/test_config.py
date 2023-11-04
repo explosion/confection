@@ -1,20 +1,17 @@
+# type: ignore
 import inspect
 import pickle
 import platform
 from types import GeneratorType
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 import catalogue
 import pytest
+from pydantic import BaseModel, PositiveInt, StrictFloat
+from pydantic.fields import Field
+from pydantic.types import StrictBool
 
-try:
-    from pydantic.v1 import BaseModel, PositiveInt, StrictFloat, constr
-    from pydantic.v1.types import StrictBool
-except ImportError:
-    from pydantic import BaseModel, StrictFloat, PositiveInt, constr  # type: ignore
-    from pydantic.types import StrictBool  # type: ignore
-
-from confection import Config, ConfigValidationError
+from confection import PYDANTIC_V2, Config, ConfigValidationError, get_model_fields
 from confection.tests.util import Cat, make_tempdir, my_registry
 from confection.util import Generator, partial
 
@@ -49,7 +46,7 @@ width = ${pipeline.classifier.model:token_vector_width}
 
 """
 
-OPTIMIZER_CFG = """
+OPTIMIZER_DATACLASS_CFG = """
 [optimizer]
 @optimizers = "Adam.v1"
 beta1 = 0.9
@@ -62,6 +59,27 @@ initial_rate = 0.1
 warmup_steps = 10000
 total_steps = 100000
 """
+
+
+OPTIMIZER_PYDANTIC_CFG = """
+[optimizer]
+@optimizers = "Adam.pydantic.v1"
+beta1 = 0.9
+beta2 = 0.999
+use_averages = true
+
+[optimizer.learn_rate]
+@schedules = "warmup_linear.v1"
+initial_rate = 0.1
+warmup_steps = 10000
+total_steps = 100000
+"""
+
+
+if PYDANTIC_V2:
+    INT_PARSING_ERROR_TYPE = "int_parsing"
+else:
+    INT_PARSING_ERROR_TYPE = "type_error.integer"
 
 
 class HelloIntsSchema(BaseModel):
@@ -107,7 +125,7 @@ def test_invalidate_simple_config():
         my_registry._fill(invalid_config, HelloIntsSchema)
     error = exc_info.value
     assert len(error.errors) == 1
-    assert "type_error.integer" in error.error_types
+    assert INT_PARSING_ERROR_TYPE in error.error_types
 
 
 def test_invalidate_extra_args():
@@ -157,8 +175,9 @@ def test_parse_args():
 
 def test_make_promise_schema():
     schema = my_registry.make_promise_schema(good_catsie)
-    assert "evil" in schema.__fields__
-    assert "cute" in schema.__fields__
+    model_fields = get_model_fields(schema)
+    assert "evil" in model_fields
+    assert "cute" in model_fields
 
 
 def test_validate_promise():
@@ -219,8 +238,7 @@ def test_resolve_schema():
         one: PositiveInt
         two: TestBaseSubSchema
 
-        class Config:
-            extra = "forbid"
+        model_config = {"extra": "forbid"}
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
@@ -237,11 +255,18 @@ def test_resolve_schema():
         my_registry.resolve({"cfg": config}, schema=TestSchema)
 
 
+@pytest.mark.skipif(
+    PYDANTIC_V2,
+    reason="In Pydantic v2, int/float cannot be coerced to str so this test will fail.",
+)
 def test_resolve_schema_coerced():
     class TestBaseSchema(BaseModel):
         test1: str
         test2: bool
         test3: float
+
+        class Config:
+            strict = False
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
@@ -264,17 +289,25 @@ def test_read_config():
     assert cfg["pipeline"]["classifier"]["model"]["embedding"]["width"] == 128
 
 
-def test_optimizer_config():
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize(
+    "optimizer_cfg_str",
+    [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG],
+    ids=["dataclasses", "pydantic"],
+)
+def test_optimizer_config(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     optimizer = my_registry.resolve(cfg, validate=True)["optimizer"]
     assert optimizer.beta1 == 0.9
 
 
-def test_config_to_str():
-    cfg = Config().from_str(OPTIMIZER_CFG)
-    assert cfg.to_str().strip() == OPTIMIZER_CFG.strip()
-    cfg = Config({"optimizer": {"foo": "bar"}}).from_str(OPTIMIZER_CFG)
-    assert cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
+def test_config_to_str(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
+    assert cfg.to_str().strip() == optimizer_cfg_str.strip()
+    cfg = Config({"optimizer": {"foo": "bar"}}).from_str(optimizer_cfg_str)
+    assert cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
 def test_config_to_str_creates_intermediate_blocks():
@@ -290,28 +323,39 @@ bar = 1
     )
 
 
-def test_config_roundtrip_bytes():
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
+def test_config_roundtrip_bytes(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     cfg_bytes = cfg.to_bytes()
     new_cfg = Config().from_bytes(cfg_bytes)
-    assert new_cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+    assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
-def test_config_roundtrip_disk():
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
+def test_config_roundtrip_disk(optimizer_cfg_str: str):
+    cfg = Config().from_str(optimizer_cfg_str)
     with make_tempdir() as path:
         cfg_path = path / "config.cfg"
         cfg.to_disk(cfg_path)
         new_cfg = Config().from_disk(cfg_path)
-    assert new_cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+    assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
-def test_config_roundtrip_disk_respects_path_subclasses(pathy_fixture):
-    cfg = Config().from_str(OPTIMIZER_CFG)
+@pytest.mark.parametrize(
+    "optimizer_cfg_str", [OPTIMIZER_DATACLASS_CFG, OPTIMIZER_PYDANTIC_CFG]
+)
+def test_config_roundtrip_disk_respects_path_subclasses(
+    pathy_fixture, optimizer_cfg_str: str
+):
+    cfg = Config().from_str(optimizer_cfg_str)
     cfg_path = pathy_fixture / "config.cfg"
     cfg.to_disk(cfg_path)
     new_cfg = Config().from_disk(cfg_path)
-    assert new_cfg.to_str().strip() == OPTIMIZER_CFG.strip()
+    assert new_cfg.to_str().strip() == optimizer_cfg_str.strip()
 
 
 def test_config_to_str_invalid_defaults():
@@ -328,10 +372,15 @@ def test_config_to_str_invalid_defaults():
 
 
 def test_validation_custom_types():
+    if PYDANTIC_V2:
+        log_field = Field("ERROR", pattern="(DEBUG|INFO|WARNING|ERROR)")
+    else:
+        log_field = Field("ERROR", regex="(DEBUG|INFO|WARNING|ERROR)")
+
     def complex_args(
         rate: StrictFloat,
-        steps: PositiveInt = 10,  # type: ignore
-        log_level: constr(regex="(DEBUG|INFO|WARNING|ERROR)") = "ERROR",  # noqa: F821
+        steps: PositiveInt = 10,
+        log_level: str = log_field,
     ):
         return None
 
@@ -583,10 +632,10 @@ def test_validate_generator():
 
     cfg = {"@schedules": "test_schedule.v2"}
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v2")
-    def test_optimizer2(rate: Generator) -> Generator:
+    def test_optimizer2(rate: Iterable[float]) -> Iterable[float]:
         return rate
 
     cfg = {
@@ -594,10 +643,10 @@ def test_validate_generator():
         "rate": {"@schedules": "test_schedule.v2"},
     }
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v3")
-    def test_optimizer3(schedules: Dict[str, Generator]) -> Generator:
+    def test_optimizer3(schedules: Dict[str, Iterable[float]]) -> Iterable[float]:
         return schedules["rate"]
 
     cfg = {
@@ -605,10 +654,10 @@ def test_validate_generator():
         "schedules": {"rate": {"@schedules": "test_schedule.v2"}},
     }
     result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
+    assert isinstance(result, Iterator)
 
     @my_registry.optimizers("test_optimizer.v4")
-    def test_optimizer4(*schedules: Generator) -> Generator:
+    def test_optimizer4(*schedules: Iterable[float]) -> Iterable[float]:
         return schedules[0]
 
 
@@ -1253,9 +1302,9 @@ def test_config_validation_error_custom():
     assert e1.show_config is True
     assert len(e1.errors) == 1
     assert e1.errors[0]["loc"] == ("world",)
-    assert e1.errors[0]["msg"] == "value is not a valid integer"
-    assert e1.errors[0]["type"] == "type_error.integer"
-    assert e1.error_types == set(["type_error.integer"])
+    assert e1.errors[0]["type"] == INT_PARSING_ERROR_TYPE
+    assert e1.error_types == {INT_PARSING_ERROR_TYPE}
+
     # Create a new error with overrides
     title = "Custom error"
     desc = "Some error description here"
@@ -1285,7 +1334,7 @@ def test_config_fill_without_resolve():
     assert filled["catsie"]["cute"] is True
     with pytest.raises(ConfigValidationError):
         my_registry.resolve(config, schema=BaseSchema)
-    filled2 = my_registry.fill(config, schema=BaseSchema)
+    filled2 = my_registry.fill(config, schema=BaseSchema, validate=False)
     assert filled2["catsie"]["cute"] is True
     resolved = my_registry.resolve(filled2)
     assert resolved["catsie"] == "meow"
@@ -1408,3 +1457,14 @@ def test_parse_strings_interpretable_as_ints():
     )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3
+
+
+def test_spacy_init_config():
+    """Regression test to ensure spacy init config works"""
+    try:
+        from spacy.cli import init_config
+    except ImportError:
+        pytest.skip("SpaCy not installed")
+
+    config = init_config(pipeline=["tagger"])
+    assert isinstance(config, Config)

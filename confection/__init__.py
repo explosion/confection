@@ -14,7 +14,7 @@ from configparser import (
     NoSectionError,
     ParsingError,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from types import GeneratorType
 from typing import (
@@ -26,21 +26,24 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Type,
+    TypeVar,
     Union,
     cast,
 )
 
+import catalogue
 import srsly
+from pydantic import BaseModel, ValidationError, create_model
+from pydantic.fields import FieldInfo
 
-try:
-    from pydantic.v1 import BaseModel, Extra, ValidationError, create_model
-    from pydantic.v1.fields import ModelField
-    from pydantic.v1.main import ModelMetaclass
-except ImportError:
-    from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
-    from pydantic.main import ModelMetaclass  # type: ignore
+from .util import PYDANTIC_V2, Decorator, SimpleFrozenDict, SimpleFrozenList
+
+if PYDANTIC_V2:
+    from pydantic.v1.fields import ModelField  # type: ignore
+else:
     from pydantic.fields import ModelField  # type: ignore
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
@@ -689,10 +692,7 @@ def alias_generator(name: str) -> str:
     return name
 
 
-def copy_model_field(field: ModelField, type_: Any) -> ModelField:
-    """Copy a model field and assign a new type, e.g. to accept an Any type
-    even though the original value is typed differently.
-    """
+def _copy_model_field_v1(field: ModelField, type_: Any) -> ModelField:
     return ModelField(
         name=field.name,
         type_=type_,
@@ -702,6 +702,107 @@ def copy_model_field(field: ModelField, type_: Any) -> ModelField:
         default_factory=field.default_factory,
         required=field.required,
     )
+
+
+def copy_model_field(field: FieldInfo, type_: Any) -> FieldInfo:
+    """Copy a model field and assign a new type, e.g. to accept an Any type
+    even though the original value is typed differently.
+    """
+    if PYDANTIC_V2:
+        field_info = copy.deepcopy(field)
+        field_info.annotation = type_  # type: ignore
+        return field_info
+    else:
+        return _copy_model_field_v1(field, type_)  # type: ignore
+
+
+def get_model_config_extra(model: Type[BaseModel]) -> str:
+    if PYDANTIC_V2:
+        extra = str(model.model_config.get("extra", "forbid"))  # type: ignore
+    else:
+        extra = str(model.Config.extra) or "forbid"  # type: ignore
+    assert isinstance(extra, str)
+    return extra
+
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def _schema_is_pydantic_v2(Schema: Union[Type[BaseModel], BaseModel]) -> bool:
+    """If `model_fields` attr is present, it means we have a schema or instance
+    of a pydantic v2 BaseModel. Even if we're using Pydantic V2, users could still
+    import from `pydantic.v1` and that would break our compat checks.
+    Schema (Union[Type[BaseModel], BaseModel]): Input schema or instance.
+    RETURNS (bool): True if the pydantic model is a v2 model or not
+    """
+    return hasattr(Schema, "model_fields")
+
+
+def model_validate(Schema: Type[_ModelT], data: Dict[str, Any]) -> _ModelT:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_validate(data)  # type: ignore
+    else:
+        return Schema.validate(data)  # type: ignore
+
+
+def model_construct(
+    Schema: Type[_ModelT], fields_set: Optional[Set[str]], data: Dict[str, Any]
+) -> _ModelT:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_construct(fields_set, **data)  # type: ignore
+    else:
+        return Schema.construct(fields_set, **data)  # type: ignore
+
+
+def model_dump(instance: BaseModel) -> Dict[str, Any]:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(instance):
+        return instance.model_dump()  # type: ignore
+    else:
+        return instance.dict()
+
+
+def get_field_annotation(field: FieldInfo) -> Type:
+    return field.annotation if PYDANTIC_V2 else field.type_  # type: ignore
+
+
+def get_model_fields(Schema: Union[Type[BaseModel], BaseModel]) -> Dict[str, FieldInfo]:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_fields  # type: ignore
+    else:
+        return Schema.__fields__  # type: ignore
+
+
+def get_model_fields_set(Schema: Union[Type[BaseModel], BaseModel]) -> Set[str]:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        return Schema.model_fields_set  # type: ignore
+    else:
+        return Schema.__fields_set__  # type: ignore
+
+
+def get_model_extra(instance: BaseModel) -> Dict[str, FieldInfo]:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(instance):
+        return instance.model_extra  # type: ignore
+    else:
+        return {}
+
+
+def set_model_field(Schema: Type[BaseModel], key: str, field: FieldInfo):
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(Schema):
+        Schema.model_fields[key] = field  # type: ignore
+    else:
+        Schema.__fields__[key] = field  # type: ignore
+
+
+def update_from_model_extra(
+    shallow_result_dict: Dict[str, Any], result: BaseModel
+) -> None:
+    if PYDANTIC_V2 and _schema_is_pydantic_v2(result):
+        if result.model_extra is not None:  # type: ignore
+            shallow_result_dict.update(result.model_extra)  # type: ignore
+
+
+def _safe_is_subclass(cls: type, expected: type) -> bool:
+    return inspect.isclass(cls) and issubclass(cls, BaseModel)
 
 
 class EmptySchema(BaseModel):
@@ -829,6 +930,7 @@ class registry:
         resolve: bool = True,
         parent: str = "",
         overrides: Dict[str, Dict[str, Any]] = {},
+        resolved_object_keys: Set[str] = set(),
     ) -> Tuple[
         Union[Dict[str, Any], Config], Union[Dict[str, Any], Config], Dict[str, Any]
     ]:
@@ -850,12 +952,14 @@ class registry:
                 value = overrides[key_parent]
                 config[key] = value
             if cls.is_promise(value):
-                if key in schema.__fields__ and not resolve:
+                model_fields = get_model_fields(schema)
+                if key in model_fields and not resolve:
                     # If we're not resolving the config, make sure that the field
                     # expecting the promise is typed Any so it doesn't fail
                     # validation if it doesn't receive the function return value
-                    field = schema.__fields__[key]
-                    schema.__fields__[key] = copy_model_field(field, Any)
+                    field = model_fields[key]
+                    new_field = copy_model_field(field, Any)
+                    set_model_field(schema, key, new_field)
                 promise_schema = cls.make_promise_schema(value, resolve=resolve)
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -864,6 +968,7 @@ class registry:
                     resolve=resolve,
                     parent=key_parent,
                     overrides=overrides,
+                    resolved_object_keys=resolved_object_keys,
                 )
                 reg_name, func_name = cls.get_constructor(final[key])
                 args, kwargs = cls.parse_args(final[key])
@@ -875,6 +980,11 @@ class registry:
                     # We don't want to try/except this and raise our own error
                     # here, because we want the traceback if the function fails.
                     getter_result = getter(*args, **kwargs)
+
+                    if isinstance(getter_result, BaseModel) or is_dataclass(
+                        getter_result
+                    ):
+                        resolved_object_keys.add(key)
                 else:
                     # We're not resolving and calling the function, so replace
                     # the getter_result with a Promise class
@@ -890,12 +1000,14 @@ class registry:
                     validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
-                if key in schema.__fields__:
-                    field = schema.__fields__[key]
-                    field_type = field.type_
-                    if not isinstance(field.type_, ModelMetaclass):
-                        # If we don't have a pydantic schema and just a type
-                        field_type = EmptySchema
+                fields = get_model_fields(schema)
+                if key in fields:
+                    field = fields[key]
+                    annotation = get_field_annotation(field)
+                    if annotation is not None and _safe_is_subclass(
+                        annotation, BaseModel
+                    ):
+                        field_type = annotation
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
                     field_type,
@@ -921,21 +1033,39 @@ class registry:
         exclude = []
         if validate:
             try:
-                result = schema.parse_obj(validation)
+                result = model_validate(schema, validation)
             except ValidationError as e:
                 raise ConfigValidationError(
                     config=config, errors=e.errors(), parent=parent
                 ) from None
         else:
-            # Same as parse_obj, but without validation
-            result = schema.construct(**validation)
+            # Same as model_validate, but without validation
+            fields_set = set(get_model_fields(schema).keys())
+            result = model_construct(schema, fields_set, validation)
             # If our schema doesn't allow extra values, we need to filter them
             # manually because .construct doesn't parse anything
-            if schema.Config.extra in (Extra.forbid, Extra.ignore):
-                fields = schema.__fields__.keys()
-                exclude = [k for k in result.__fields_set__ if k not in fields]
+            if get_model_config_extra(schema) in ("forbid", "extra"):
+                result_field_names = get_model_fields_set(result)
+                exclude = [
+                    k for k in dict(result).keys() if k not in result_field_names
+                ]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
-        validation.update(result.dict(exclude=exclude_validation))
+        # Do a shallow serialization first
+        # If any of the sub-objects are Pydantic models, first check if they
+        # were resolved earlier from a registry. If they weren't resolved
+        # they are part of a nested schema and need to be serialized with
+        # model.dict()
+        # Allows for returning Pydantic models from a registered function
+        shallow_result_dict = dict(result)
+        update_from_model_extra(shallow_result_dict, result)
+        result_dict = {}
+        for k, v in shallow_result_dict.items():
+            if k in exclude_validation:
+                continue
+            result_dict[k] = v
+            if isinstance(v, BaseModel) and k not in resolved_object_keys:
+                result_dict[k] = model_dump(v)
+        validation.update(result_dict)
         filled, final = cls._update_from_parsed(validation, filled, final)
         if exclude:
             filled = {k: v for k, v in filled.items() if k not in exclude}
@@ -968,6 +1098,8 @@ class registry:
                 continue  # don't substitute if list of positional args
             # Check numpy first, just in case. Use stringified type so that numpy dependency can be ditched.
             elif str(type(value)) == "<class 'numpy.ndarray'>":
+                final[key] = value
+            elif isinstance(value, BaseModel) and isinstance(final[key], BaseModel):
                 final[key] = value
             elif (
                 value != final[key] or not isinstance(type(value), type(final[key]))
