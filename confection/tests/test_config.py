@@ -290,6 +290,29 @@ bar = 1
     )
 
 
+def test_config_to_str_escapes():
+    section_str = """
+        [section]
+        node1 = "^a$$"
+        node2 = "$$b$$c"
+        """
+    section_dict = {"section": {"node1": "^a$", "node2": "$b$c"}}
+
+    # parse from escaped string
+    cfg = Config().from_str(section_str)
+    assert cfg == section_dict
+
+    # parse from non-escaped dict
+    cfg = Config(section_dict)
+    assert cfg == section_dict
+
+    # roundtrip through str
+    cfg_str = cfg.to_str()
+    assert "^a$$" in cfg_str
+    new_cfg = Config().from_str(cfg_str)
+    assert cfg == section_dict
+
+
 def test_config_roundtrip_bytes():
     cfg = Config().from_str(OPTIMIZER_CFG)
     cfg_bytes = cfg.to_bytes()

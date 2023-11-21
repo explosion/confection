@@ -150,7 +150,7 @@ class CustomInterpolation(ExtendedInterpolation):
                 else:
                     accum.append(v)
             else:
-                err = "'$' must be followed by '$' or '{', " "found: %r" % (rest,)
+                err = "'$' must be followed by '$' or '{', found: %r" % (rest,)
                 raise InterpolationSyntaxError(option, section, err)
 
     def _get_section_name(self, name: str) -> str:
@@ -520,7 +520,10 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
         # Work around values that are strings but numbers
         value = f'"{value}"'
     try:
-        return srsly.json_dumps(value)
+        value = srsly.json_dumps(value)
+        value = re.sub(r"\$([^{])", "$$\1", value)
+        value = re.sub(r"\$$", "$$", value)
+        return value
     except Exception as e:
         err_msg = (
             f"Couldn't serialize config value of type {type(value)}: {e}. Make "
