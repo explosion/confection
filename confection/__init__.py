@@ -705,6 +705,7 @@ def copy_model_field(field: ModelField, type_: Any) -> ModelField:
         default=field.default,
         default_factory=field.default_factory,
         required=field.required,
+        alias=field.alias,
     )
 
 
@@ -913,6 +914,15 @@ class registry:
                     # created via config blocks), only use its values
                     validation[v_key] = list(validation[v_key].values())
                     final[key] = list(final[key].values())
+
+                    if ARGS_FIELD_ALIAS in schema.__fields__ and not resolve:
+                        # If we're not resolving the config, make sure that the field
+                        # expecting the promise is typed Any so it doesn't fail
+                        # validation if it doesn't receive the function return value
+                        field = schema.__fields__[ARGS_FIELD_ALIAS]
+                        schema.__fields__[ARGS_FIELD_ALIAS] = copy_model_field(
+                            field, Any
+                        )
             else:
                 filled[key] = value
                 # Prevent pydantic from consuming generator if part of a union
