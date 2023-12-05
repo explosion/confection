@@ -692,6 +692,7 @@ def alias_generator(name: str) -> str:
     return name
 
 
+
 def copy_model_field(field: ModelField, type_: Any) -> ModelField:
     """Copy a model field and assign a new type, e.g. to accept an Any type
     even though the original value is typed differently.
@@ -936,7 +937,12 @@ class registry:
             # manually because .construct doesn't parse anything
             if schema.Config.extra in (Extra.forbid, Extra.ignore):
                 fields = schema.__fields__.keys()
-                exclude = [k for k in result.__fields_set__ if k not in fields]
+                # If we have a reserved field, we need to use its alias
+                field_set = [
+                    k if k != ARGS_FIELD else ARGS_FIELD_ALIAS for k in result.__fields_set__
+                ]
+                # field_set = result.__fields_set__
+                exclude = [k for k in field_set if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         validation.update(result.dict(exclude=exclude_validation))
         filled, final = cls._update_from_parsed(validation, filled, final)
