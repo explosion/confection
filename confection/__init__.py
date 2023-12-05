@@ -951,7 +951,6 @@ class registry:
                 field_set = [
                     k if k != ARGS_FIELD else ARGS_FIELD_ALIAS for k in result.__fields_set__
                 ]
-                # field_set = result.__fields_set__
                 exclude = [k for k in field_set if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         validation.update(result.dict(exclude=exclude_validation))
