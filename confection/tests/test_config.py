@@ -1431,3 +1431,31 @@ def test_parse_strings_interpretable_as_ints():
     )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3
+
+
+def test_dict_casting():
+    class CastStrAsDict:
+        @classmethod
+        def validate(cls, value):
+            if isinstance(value, str):
+                return {value: True}
+            return value
+
+        @classmethod
+        def __get_validators__(cls):
+            yield cls.validate
+
+    class SectionSchema(BaseModel):
+        key: CastStrAsDict
+
+    class MainSchema(BaseModel):
+        section: SectionSchema
+
+    cfg = Config().from_str(
+        """\
+[section]
+key = "ok"
+"""
+    )
+
+    assert my_registry.fill(cfg, schema=MainSchema) == {"section": {"key": "ok"}}
