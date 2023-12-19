@@ -436,9 +436,6 @@ def test_fill_config_positional_args_w_promise():
         return "^(*.*)^"
 
     cfg = {
-        "test_fn": {"@cats": "catsie.v568", "*": {"test_arg": {"@registry": "factory"}}}
-    }
-    cfg = {
         "config": {
             "@cats": "catsie.v568",
             "*": {"promise": {"@cats": "cat_promise.v568"}},
