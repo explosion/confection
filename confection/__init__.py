@@ -704,6 +704,7 @@ def copy_model_field(field: ModelField, type_: Any) -> ModelField:
         default=field.default,
         default_factory=field.default_factory,
         required=field.required,
+        alias=field.alias,
     )
 
 
@@ -912,6 +913,15 @@ class registry:
                     # created via config blocks), only use its values
                     validation[v_key] = list(validation[v_key].values())
                     final[key] = list(final[key].values())
+
+                    if ARGS_FIELD_ALIAS in schema.__fields__ and not resolve:
+                        # If we're not resolving the config, make sure that the field
+                        # expecting the promise is typed Any so it doesn't fail
+                        # validation if it doesn't receive the function return value
+                        field = schema.__fields__[ARGS_FIELD_ALIAS]
+                        schema.__fields__[ARGS_FIELD_ALIAS] = copy_model_field(
+                            field, Any
+                        )
             else:
                 filled[key] = value
                 # Prevent pydantic from consuming generator if part of a union
@@ -936,7 +946,12 @@ class registry:
             # manually because .construct doesn't parse anything
             if schema.Config.extra in (Extra.forbid, Extra.ignore):
                 fields = schema.__fields__.keys()
-                exclude = [k for k in result.__fields_set__ if k not in fields]
+                # If we have a reserved field, we need to use its alias
+                field_set = [
+                    k if k != ARGS_FIELD else ARGS_FIELD_ALIAS
+                    for k in result.__fields_set__
+                ]
+                exclude = [k for k in field_set if k not in fields]
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
         validation.update(result.dict(exclude=exclude_validation))
         filled, final = cls._update_from_parsed(validation, filled, final)

@@ -424,6 +424,28 @@ def test_make_config_positional_args():
     assert my_registry.resolve(cfg)["config"] == "^_^"
 
 
+def test_fill_config_positional_args_w_promise():
+    @my_registry.cats("catsie.v568")
+    def catsie_568(*args: str, foo: str = "bar"):
+        assert args[0] == "^(*.*)^"
+        assert foo == "baz"
+        return args[0]
+
+    @my_registry.cats("cat_promise.v568")
+    def cat_promise() -> str:
+        return "^(*.*)^"
+
+    cfg = {
+        "config": {
+            "@cats": "catsie.v568",
+            "*": {"promise": {"@cats": "cat_promise.v568"}},
+        }
+    }
+    filled = my_registry.fill(cfg, validate=True)
+    assert filled["config"]["foo"] == "bar"
+    assert filled["config"]["*"] == {"promise": {"@cats": "cat_promise.v568"}}
+
+
 def test_make_config_positional_args_complex():
     @my_registry.cats("catsie.v890")
     def catsie_890(*args: Optional[Union[StrictBool, PositiveInt]]):
