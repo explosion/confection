@@ -896,8 +896,11 @@ class registry:
                 field_type = EmptySchema
                 if key in schema.__fields__:
                     field = schema.__fields__[key]
-                    field_type = field.type_
-                    if not isinstance(field.type_, ModelMetaclass):
+                    if hasattr(field, "type_"):
+                        field_type = field.type_
+                    else:
+                        field_type = field.annotation
+                    if not isinstance(field_type, ModelMetaclass):
                         # If we don't have a pydantic schema and just a type
                         field_type = EmptySchema
                 filled[key], validation[v_key], final[key] = cls._fill(

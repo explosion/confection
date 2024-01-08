@@ -8,11 +8,14 @@ import catalogue
 import pytest
 
 try:
+    from pydantic import BaseModel as BaseModelv2
     from pydantic.v1 import BaseModel, PositiveInt, StrictFloat, constr
     from pydantic.v1.types import StrictBool
 except ImportError:
-    from pydantic import BaseModel, StrictFloat, PositiveInt, constr  # type: ignore
+    from pydantic import BaseModel, PositiveInt, StrictFloat, constr  # type: ignore
     from pydantic.types import StrictBool  # type: ignore
+
+    BaseModelv2 = None  # type: ignore
 
 from confection import Config, ConfigValidationError
 from confection.tests.util import Cat, make_tempdir, my_registry
@@ -1453,3 +1456,31 @@ def test_parse_strings_interpretable_as_ints():
     )
     assert cfg["a"]["foo"] == [3, "003", "y"]
     assert cfg["b"]["bar"] == 3
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_field_type():
+    if BaseModelv2 is not None:
+
+        class MyValue:
+            def validate(cls, value):
+                return value
+
+            @classmethod
+            def __get_validators__(cls):
+                yield cls.validate
+
+        class SectionSchema(BaseModelv2):
+            value: MyValue
+
+        class MainSchema(BaseModelv2):
+            section: SectionSchema
+
+        cfg = Config().from_str(
+            """
+            [section]
+            value = 1
+            """
+        )
+
+        my_registry.fill(cfg, schema=MainSchema)
