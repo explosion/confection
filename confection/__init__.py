@@ -975,7 +975,7 @@ class registry:
                 filled[key] = value
             if key not in final:
                 final[key] = value
-            if isinstance(value, dict):
+            if isinstance(value, dict) and isinstance(final[key], dict):
                 filled[key], final[key] = cls._update_from_parsed(
                     value, filled[key], final[key]
                 )
