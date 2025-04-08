@@ -34,16 +34,12 @@ from typing import (
 
 import srsly
 
-try:
-    from pydantic.v1 import BaseModel, Extra, ValidationError, create_model
-    from pydantic.v1.fields import ModelField
-    from pydantic.v1.main import ModelMetaclass
-except ImportError:
-    from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
-    from pydantic.main import ModelMetaclass  # type: ignore
-    from pydantic.fields import ModelField  # type: ignore
+from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
+from pydantic.fields import Field as ModelField
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
+from ._fill_config import fill_config, insert_promises, resolve_promises, validate_config
+from ._fill_config import ConfigValidationError
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
@@ -577,110 +573,6 @@ def deep_merge_configs(
     return config
 
 
-class ConfigValidationError(ValueError):
-    def __init__(
-        self,
-        *,
-        config: Optional[Union[Config, Dict[str, Dict[str, Any]], str]] = None,
-        errors: Union[Sequence[Mapping[str, Any]], Iterable[Dict[str, Any]]] = tuple(),
-        title: Optional[str] = "Config validation error",
-        desc: Optional[str] = None,
-        parent: Optional[str] = None,
-        show_config: bool = True,
-    ) -> None:
-        """Custom error for validating configs.
-
-        config (Union[Config, Dict[str, Dict[str, Any]], str]): The
-            config the validation error refers to.
-        errors (Union[Sequence[Mapping[str, Any]], Iterable[Dict[str, Any]]]):
-            A list of errors as dicts with keys "loc" (list of strings
-            describing the path of the value), "msg" (validation message
-            to show) and optional "type" (mostly internals).
-            Same format as produced by pydantic's validation error (e.errors()).
-        title (str): The error title.
-        desc (str): Optional error description, displayed below the title.
-        parent (str): Optional parent to use as prefix for all error locations.
-            For example, parent "element" will result in "element -> a -> b".
-        show_config (bool): Whether to print the whole config with the error.
-
-        ATTRIBUTES:
-        config (Union[Config, Dict[str, Dict[str, Any]], str]): The config.
-        errors (Iterable[Dict[str, Any]]): The errors.
-        error_types (Set[str]): All "type" values defined in the errors, if
-            available. This is most relevant for the pydantic errors that define
-            types like "type_error.integer". This attribute makes it easy to
-            check if a config validation error includes errors of a certain
-            type, e.g. to log additional information or custom help messages.
-        title (str): The title.
-        desc (str): The description.
-        parent (str): The parent.
-        show_config (bool): Whether to show the config.
-        text (str): The formatted error text.
-        """
-        self.config = config
-        self.errors = errors
-        self.title = title
-        self.desc = desc
-        self.parent = parent
-        self.show_config = show_config
-        self.error_types = set()
-        for error in self.errors:
-            err_type = error.get("type")
-            if err_type:
-                self.error_types.add(err_type)
-        self.text = self._format()
-        ValueError.__init__(self, self.text)
-
-    @classmethod
-    def from_error(
-        cls,
-        err: "ConfigValidationError",
-        title: Optional[str] = None,
-        desc: Optional[str] = None,
-        parent: Optional[str] = None,
-        show_config: Optional[bool] = None,
-    ) -> "ConfigValidationError":
-        """Create a new ConfigValidationError based on an existing error, e.g.
-        to re-raise it with different settings. If no overrides are provided,
-        the values from the original error are used.
-
-        err (ConfigValidationError): The original error.
-        title (str): Overwrite error title.
-        desc (str): Overwrite error description.
-        parent (str): Overwrite error parent.
-        show_config (bool): Overwrite whether to show config.
-        RETURNS (ConfigValidationError): The new error.
-        """
-        return cls(
-            config=err.config,
-            errors=err.errors,
-            title=title if title is not None else err.title,
-            desc=desc if desc is not None else err.desc,
-            parent=parent if parent is not None else err.parent,
-            show_config=show_config if show_config is not None else err.show_config,
-        )
-
-    def _format(self) -> str:
-        """Format the error message."""
-        loc_divider = "->"
-        data = []
-        for error in self.errors:
-            err_loc = f" {loc_divider} ".join([str(p) for p in error.get("loc", [])])
-            if self.parent:
-                err_loc = f"{self.parent} {loc_divider} {err_loc}"
-            data.append((err_loc, error.get("msg")))
-        result = []
-        if self.title:
-            result.append(self.title)
-        if self.desc:
-            result.append(self.desc)
-        if data:
-            result.append("\n".join([f"{entry[0]}\t{entry[1]}" for entry in data]))
-        if self.config and self.show_config:
-            result.append(f"{self.config}")
-        return "\n\n" + "\n".join(result)
-
-
 def alias_generator(name: str) -> str:
     """Generate field aliases in promise schema."""
     # Underscore fields are not allowed in model, so use alias
@@ -757,9 +649,11 @@ class registry:
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
-        resolved, _ = cls._make(
-            config, schema=schema, overrides=overrides, validate=validate, resolve=True
-        )
+        config = cls.fill(config, schema=schema, overrides=overrides, validate=validate)
+        promised = insert_promises(cls, config, resolve=True, validate=validate)
+        resolved = resolve_promises(promised, validate=validate)
+        if validate:
+            validate_config(resolved, schema)
         return resolved
 
     @classmethod
@@ -770,32 +664,7 @@ class registry:
         schema: Type[BaseModel] = EmptySchema,
         overrides: Dict[str, Any] = {},
         validate: bool = True,
-    ):
-        _, filled = cls._make(
-            config, schema=schema, overrides=overrides, validate=validate, resolve=False
-        )
-        return filled
-
-    @classmethod
-    def _make(
-        cls,
-        config: Union[Config, Dict[str, Dict[str, Any]]],
-        *,
-        schema: Type[BaseModel] = EmptySchema,
-        overrides: Dict[str, Any] = {},
-        resolve: bool = True,
-        validate: bool = True,
-    ) -> Tuple[Dict[str, Any], Config]:
-        """Unpack a config dictionary and create two versions of the config:
-        a resolved version with objects from the registry created recursively,
-        and a filled version with all references to registry functions left
-        intact, but filled with all values and defaults based on the type
-        annotations. If validate=True, the config will be validated against the
-        type annotations of the registered functions referenced in the config
-        (if available) and/or the schema (if available).
-        """
-        # Valid: {"optimizer": {"@optimizers": "my_cool_optimizer", "rate": 1.0}}
-        # Invalid: {"@optimizers": "my_cool_optimizer", "rate": 1.0}
+    ) -> Config:
         if cls.is_promise(config):
             err_msg = "The top-level config object can't be a reference to a registered function."
             raise ConfigValidationError(config=config, errors=[{"msg": err_msg}])
@@ -806,13 +675,8 @@ class registry:
         orig_config = config
         if not is_interpolated:
             config = Config(orig_config).interpolate()
-        filled, _, resolved = cls._fill(
-            config, schema, validate=validate, overrides=overrides, resolve=resolve
-        )
+        filled = fill_config(cls, config, schema=schema, overrides=overrides, validate=validate)
         filled = Config(filled, section_order=section_order)
-        # Check that overrides didn't include invalid properties not in config
-        if validate:
-            cls._validate_overrides(filled, overrides)
         # Merge the original config back to preserve variables if we started
         # with a config that wasn't interpolated. Here, we prefer variables to
         # allow auto-filling a non-interpolated config without destroying
@@ -821,189 +685,7 @@ class registry:
             filled = filled.merge(
                 Config(orig_config, is_interpolated=False), remove_extra=True
             )
-        return dict(resolved), filled
-
-    @classmethod
-    def _fill(
-        cls,
-        config: Union[Config, Dict[str, Dict[str, Any]]],
-        schema: Type[BaseModel] = EmptySchema,
-        *,
-        validate: bool = True,
-        resolve: bool = True,
-        parent: str = "",
-        overrides: Dict[str, Dict[str, Any]] = {},
-    ) -> Tuple[
-        Union[Dict[str, Any], Config], Union[Dict[str, Any], Config], Dict[str, Any]
-    ]:
-        """Build three representations of the config:
-        1. All promises are preserved (just like config user would provide).
-        2. Promises are replaced by their return values. This is the validation
-           copy and will be parsed by pydantic. It lets us include hacks to
-           work around problems (e.g. handling of generators).
-        3. Final copy with promises replaced by their return values.
-        """
-        filled: Dict[str, Any] = {}
-        validation: Dict[str, Any] = {}
-        final: Dict[str, Any] = {}
-        for key, value in config.items():
-            # If the field name is reserved, we use its alias for validation
-            v_key = RESERVED_FIELDS.get(key, key)
-            key_parent = f"{parent}.{key}".strip(".")
-            if key_parent in overrides:
-                value = overrides[key_parent]
-                config[key] = value
-            if cls.is_promise(value):
-                if key in schema.__fields__ and not resolve:
-                    # If we're not resolving the config, make sure that the field
-                    # expecting the promise is typed Any so it doesn't fail
-                    # validation if it doesn't receive the function return value
-                    field = schema.__fields__[key]
-                    schema.__fields__[key] = copy_model_field(field, Any)
-                promise_schema = cls.make_promise_schema(value, resolve=resolve)
-                filled[key], validation[v_key], final[key] = cls._fill(
-                    value,
-                    promise_schema,
-                    validate=validate,
-                    resolve=resolve,
-                    parent=key_parent,
-                    overrides=overrides,
-                )
-                reg_name, func_name = cls.get_constructor(final[key])
-                args, kwargs = cls.parse_args(final[key])
-                if resolve:
-                    # Call the function and populate the field value. We can't
-                    # just create an instance of the type here, since this
-                    # wouldn't work for generics / more complex custom types
-                    getter = cls.get(reg_name, func_name)
-                    # We don't want to try/except this and raise our own error
-                    # here, because we want the traceback if the function fails.
-                    getter_result = getter(*args, **kwargs)
-                else:
-                    # We're not resolving and calling the function, so replace
-                    # the getter_result with a Promise class
-                    getter_result = Promise(
-                        registry=reg_name, name=func_name, args=args, kwargs=kwargs
-                    )
-                validation[v_key] = getter_result
-                final[key] = getter_result
-                if isinstance(validation[v_key], GeneratorType):
-                    # If value is a generator we can't validate type without
-                    # consuming it (which doesn't work if it's infinite – see
-                    # schedule for examples). So we skip it.
-                    validation[v_key] = []
-            elif hasattr(value, "items"):
-                field_type = EmptySchema
-                if key in schema.__fields__:
-                    field = schema.__fields__[key]
-                    field_type = field.type_
-                    if not isinstance(field.type_, ModelMetaclass):
-                        # If we don't have a pydantic schema and just a type
-                        field_type = EmptySchema
-                filled[key], validation[v_key], final[key] = cls._fill(
-                    value,
-                    field_type,
-                    validate=validate,
-                    resolve=resolve,
-                    parent=key_parent,
-                    overrides=overrides,
-                )
-                if key == ARGS_FIELD and isinstance(validation[v_key], dict):
-                    # If the value of variable positional args is a dict (e.g.
-                    # created via config blocks), only use its values
-                    validation[v_key] = list(validation[v_key].values())
-                    final[key] = list(final[key].values())
-
-                    if ARGS_FIELD_ALIAS in schema.__fields__ and not resolve:
-                        # If we're not resolving the config, make sure that the field
-                        # expecting the promise is typed Any so it doesn't fail
-                        # validation if it doesn't receive the function return value
-                        field = schema.__fields__[ARGS_FIELD_ALIAS]
-                        schema.__fields__[ARGS_FIELD_ALIAS] = copy_model_field(
-                            field, Any
-                        )
-            else:
-                filled[key] = value
-                # Prevent pydantic from consuming generator if part of a union
-                validation[v_key] = (
-                    value if not isinstance(value, GeneratorType) else []
-                )
-                final[key] = value
-        # Now that we've filled in all of the promises, update with defaults
-        # from schema, and validate if validation is enabled
-        exclude = []
-        if validate:
-            try:
-                result = schema.parse_obj(validation)
-            except ValidationError as e:
-                raise ConfigValidationError(
-                    config=config, errors=e.errors(), parent=parent
-                ) from None
-        else:
-            # Same as parse_obj, but without validation
-            result = schema.construct(**validation)
-            # If our schema doesn't allow extra values, we need to filter them
-            # manually because .construct doesn't parse anything
-            if schema.Config.extra in (Extra.forbid, Extra.ignore):
-                fields = schema.__fields__.keys()
-                # If we have a reserved field, we need to use its alias
-                field_set = [
-                    k if k != ARGS_FIELD else ARGS_FIELD_ALIAS
-                    for k in result.__fields_set__
-                ]
-                exclude = [k for k in field_set if k not in fields]
-        exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
-        validation.update(result.dict(exclude=exclude_validation))
-        filled, final = cls._update_from_parsed(validation, filled, final)
-        if exclude:
-            filled = {k: v for k, v in filled.items() if k not in exclude}
-            validation = {k: v for k, v in validation.items() if k not in exclude}
-            final = {k: v for k, v in final.items() if k not in exclude}
-        return filled, validation, final
-
-    @classmethod
-    def _update_from_parsed(
-        cls, validation: Dict[str, Any], filled: Dict[str, Any], final: Dict[str, Any]
-    ):
-        """Update the final result with the parsed config like converted
-        values recursively.
-        """
-        for key, value in validation.items():
-            if key in RESERVED_FIELDS.values():
-                continue  # skip aliases for reserved fields
-            if key not in filled:
-                filled[key] = value
-            if key not in final:
-                final[key] = value
-            if isinstance(value, dict):
-                filled[key], final[key] = cls._update_from_parsed(
-                    value, filled[key], final[key]
-                )
-            # Update final config with parsed value if they're not equal (in
-            # value and in type) but not if it's a generator because we had to
-            # replace that to validate it correctly
-            elif key == ARGS_FIELD:
-                continue  # don't substitute if list of positional args
-            # Check numpy first, just in case. Use stringified type so that numpy dependency can be ditched.
-            elif str(type(value)) == "<class 'numpy.ndarray'>":
-                final[key] = value
-            elif (
-                value != final[key] or not isinstance(type(value), type(final[key]))
-            ) and not isinstance(final[key], GeneratorType):
-                final[key] = value
-        return filled, final
-
-    @classmethod
-    def _validate_overrides(cls, filled: Config, overrides: Dict[str, Any]):
-        """Validate overrides against a filled config to make sure there are
-        no references to properties that don't exist and weren't used."""
-        error_msg = "Invalid override: config value doesn't exist"
-        errors = []
-        for override_key in overrides.keys():
-            if not cls._is_in_config(override_key, filled):
-                errors.append({"msg": error_msg, "loc": [override_key]})
-        if errors:
-            raise ConfigValidationError(config=filled, errors=errors)
+        return filled
 
     @classmethod
     def _is_in_config(cls, prop: str, config: Union[Dict[str, Any], Config]):
@@ -1085,6 +767,17 @@ class registry:
         sig_args["__config__"] = _PromiseSchemaConfig
         return create_model("ArgModel", **sig_args)
 
+
+def ensure_interpolated(config: Config) -> Config:
+    # If a Config was loaded with interpolate=False, we assume it needs to
+    # be interpolated first, otherwise we take it at face value
+    is_interpolated = not isinstance(config, Config) or config.is_interpolated
+    section_order = config.section_order if isinstance(config, Config) else None
+    orig_config = config
+    if not is_interpolated:
+        config = Config(orig_config).interpolate()
+    return config
+ 
 
 __all__ = [
     "Config",

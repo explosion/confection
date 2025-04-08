@@ -10,10 +10,7 @@ from typing import Generator, Generic, Iterable, List, Optional, TypeVar, Union
 
 import catalogue
 
-try:
-    from pydantic.v1.types import StrictBool
-except ImportError:
-    from pydantic.types import StrictBool  # type: ignore
+from pydantic.types import StrictBool  # type: ignore
 
 import confection
 
