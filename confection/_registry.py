@@ -5,20 +5,20 @@ from typing import (
     List,
     Tuple,
     Type,
-    Iterable,
     Optional,
     Sequence,
     TypeVar,
     Generic,
     Callable,
 )
+import catalogue
 import inspect
 from dataclasses import dataclass
-import re
-from pydantic import BaseModel, ValidationError, create_model
+from pydantic import BaseModel, ValidationError, create_model, Field
+from pydantic.fields import FieldInfo
 import copy
 from ._errors import ConfigValidationError
-from ._config import Config, RESERVED_FIELDS, ARGS_FIELD, ARGS_FIELD_ALIAS, SECTION_PREFIX, JSON_EXCEPTIONS, VARIABLE_RE
+from ._config import Config, ARGS_FIELD, ARGS_FIELD_ALIAS
 from .util import is_promise
 
 
@@ -35,53 +35,57 @@ class Promise(Generic[_PromisedType]):
     name: str
     var_args: List[Any]
     kwargs: Dict[str, Any]
-    getter: Callable[..., _PromisedType]
-    schema: Type[BaseModel]
+    getter: Union[Callable[..., _PromisedType], catalogue.RegistryError]
+    schema: Optional[Type[BaseModel]]
 
     @property
     def return_type(self) -> _PromisedType:
+        if isinstance(self.getter, catalogue.RegistryError):
+            raise self.getter
         signature = inspect.signature(self.getter)
         return signature.return_annotation
 
+    def validate(self) -> Any:
+        kwargs = dict(self.kwargs)
+        args = list(self.var_args)
+        if args:
+            kwargs[ARGS_FIELD] = args
+        try:
+            _ = self.schema.model_validate(kwargs)
+        except ValidationError as e:
+            raise ConfigValidationError(config=kwargs, errors=e.errors()) from None
+ 
+
     def resolve(self, validate: bool = True) -> Any:
-        kwargs = {}
-        for name, kwarg in self.kwargs.items():
-            if isinstance(kwarg, Promise):
-                kwargs[name] = kwarg.resolve()
-            else:
-                kwargs[name] = kwarg
-        args = []
-        for arg in self.var_args:
-            if isinstance(arg, Promise):
-                args.append(arg.resolve())
-            else:
-                args.append(arg)
+        if isinstance(self.getter, catalogue.RegistryError):
+            raise self.getter
+        kwargs = _recursive_resolve(self.kwargs, validate=validate)
+        args = _recursive_resolve(self.var_args, validate=validate)
         if validate:
             schema_args = dict(kwargs)
             if args:
-                schema_args[ARGS_FIELD_ALIAS] = args
+                schema_args[ARGS_FIELD] = args
             try:
                 _ = self.schema.model_validate(schema_args)
             except ValidationError as e:
                 raise ConfigValidationError(config=kwargs, errors=e.errors()) from None
-        try:
-            return self.getter(*args, **kwargs)
-        except TypeError:
-            print(self.schema.model_fields)
-            print("Schema args", schema_args)
-            print(self.schema.model_validate(schema_args))
-            print("args", args, "kwargs", kwargs)
-            raise
+        return self.getter(*args, **kwargs)  # type: ignore
 
     @classmethod
     def from_dict(cls, registry, values, *, validate: bool = True) -> "Promise":
         reg_name, func_name = registry.get_constructor(values)
         var_args, kwargs = registry.parse_args(values)
-        getter = registry.get(reg_name, func_name)
-        schema = make_func_schema(getter)
+        try:
+            getter = registry.get(reg_name, func_name)
+        except catalogue.RegistryError as e:
+            getter = e
+        if isinstance(getter, catalogue.RegistryError):
+            schema = EmptySchema
+        else:
+            schema = make_func_schema(getter)
         if not validate:
             kwargs = remove_extra_keys(kwargs, schema)
-        return cls(
+        output = cls(
             registry=reg_name,
             name=func_name,
             var_args=var_args,
@@ -89,6 +93,20 @@ class Promise(Generic[_PromisedType]):
             getter=getter,
             schema=schema,
         )
+        #if validate:
+        #    output.validate()
+        return output
+
+
+def _recursive_resolve(obj, validate: bool):
+    if isinstance(obj, list):
+        return [_recursive_resolve(v, validate=validate) for v in obj]
+    elif isinstance(obj, dict):
+        return {k: _recursive_resolve(v, validate=validate) for k, v in obj.items()}
+    elif isinstance(obj, Promise):
+        return obj.resolve(validate=validate)
+    else:
+        return obj
 
 
 class registry:
@@ -121,7 +139,7 @@ class registry:
         validate: bool = True,
     ) -> Dict[str, Any]:
         config = cls.fill(config, schema=schema, overrides=overrides, validate=validate)
-        promised = insert_promises(cls, config, resolve=True, validate=validate)
+        promised = insert_promises(cls, config, resolve=True, validate=True)
         resolved = resolve_promises(promised, validate=validate)
         if validate:
             validate_resolved(resolved, schema)
@@ -150,7 +168,9 @@ class registry:
         if validate:
             # TODO: It sucks to have to resolve here just to do the validation, but
             # I don't currently have a good way to validate the models without the results.
-            validate_unresolved(cls, filled, schema=schema)
+            #validate_unresolved(cls, filled, schema=schema)
+            # This is really hard to get right
+            pass
         filled = Config(filled, section_order=section_order)
         # Merge the original config back to preserve variables if we started
         # with a config that wasn't interpolated. Here, we prefer variables to
@@ -182,7 +202,7 @@ class registry:
         to a registered function (via a key starting with `"@"`.
         """
         return is_promise(obj)
-    
+
     @classmethod
     def get_constructor(cls, obj: Dict[str, Any]) -> Tuple[str, str]:
         id_keys = [k for k in obj.keys() if k.startswith("@")]
@@ -202,8 +222,6 @@ class registry:
             if not key.startswith("@"):
                 if key == ARGS_FIELD:
                     args = value
-                elif key in RESERVED_FIELDS.values():
-                    continue
                 else:
                     kwargs[key] = value
         return args, kwargs
@@ -222,16 +240,12 @@ class registry:
         return make_func_schema(func)
 
 
-
-
 def alias_generator(name: str) -> str:
     """Generate field aliases in promise schema."""
     # Underscore fields are not allowed in model, so use alias
     if name == ARGS_FIELD_ALIAS:
         return ARGS_FIELD
     # Auto-alias fields that shadow base model attributes
-    if name in RESERVED_FIELDS:
-        return RESERVED_FIELDS[name]
     return name
 
 
@@ -251,10 +265,25 @@ def fill_config(
 
 
 def validate_unresolved(registry, config, schema):
-    promised = insert_promises(registry, config, resolve=True, validate=True)
-    resolved = resolve_promises(promised, validate=True)
-    validate_resolved(resolved, schema)
-    return resolved
+    promised = insert_promises(registry, config, resolve=False, validate=True)
+    return promised
+    #schema = allow_promises(promised, schema)
+    #try:
+    #    _ = schema.model_validate(promised)
+    #except ValidationError as e:
+    #    raise ConfigValidationError(config=config, errors=e.errors()) from None
+    #return promised
+
+
+def validate_resolved(config, schema: Type[BaseModel]):
+    # If value is a generator we can't validate type without
+    # consuming it (which doesn't work if it's infinite – see
+    # schedule for examples). So we skip it.
+    config = dict(config)
+    try:
+        _ = schema.model_validate(config)
+    except ValidationError as e:
+        raise ConfigValidationError(config=config, errors=e.errors()) from None
 
 
 def fill_defaults(
@@ -262,11 +291,13 @@ def fill_defaults(
 ) -> Dict[str, Any]:
     output = dict(config)
     for name, field in schema.model_fields.items():
-        if name not in config and field.default:
+        # Account for the alias on variable positional args
+        alias = field.alias if field.alias is not None else name
+        if alias not in config and field.default:
             if isinstance(field.default, BaseModel):
-                output[name] = field.default.model_dump()
+                output[alias] = field.default.model_dump()
             else:
-                output[name] = field.default
+                output[alias] = field.default
     for key, value in output.items():
         if registry.is_promise(value):
             schema = registry.make_promise_schema(value, resolve=False)
@@ -297,13 +328,6 @@ def remove_extra_keys(
     return output
 
 
-def validate_resolved(config, schema: Type[BaseModel]):
-    try:
-        _ = schema.model_validate(config)
-    except ValidationError as e:
-        raise ConfigValidationError(config=config, errors=e.errors()) from None
-
-
 def insert_promises(
     registry, config: Dict[str, Dict[str, Any]], resolve: bool, validate: bool
 ) -> Dict[str, Dict[str, Any]]:
@@ -312,19 +336,19 @@ def insert_promises(
     """
     output = {}
     for key, value in config.items():
-        v_key = RESERVED_FIELDS.get(key, key)
         if registry.is_promise(value):
-            output[v_key] = Promise.from_dict(
+            value = insert_promises(registry, value, resolve=resolve, validate=validate)
+            output[key] = Promise.from_dict(
                 registry,
-                insert_promises(registry, value, resolve=resolve, validate=validate),
+                value,
                 validate=validate,
             )
         elif isinstance(value, dict):
-            output[v_key] = insert_promises(
+            output[key] = insert_promises(
                 registry, value, resolve=resolve, validate=validate
             )
         else:
-            output[v_key] = value
+            output[key] = value
     return output
 
 
@@ -370,8 +394,6 @@ def make_func_schema(func):
     for param in inspect.signature(func).parameters.values():
         # If no annotation is specified assume it's anything
         annotation = param.annotation if param.annotation != param.empty else Any
-        # Allow promises to stand in for their return-types
-        annotation = Union[annotation, Promise[annotation]]
         # If no default value is specified assume that it's required
         default = param.default if param.default != param.empty else ...
         # Handle spread arguments and use their annotation as Sequence[whatever]
@@ -379,8 +401,26 @@ def make_func_schema(func):
             spread_annot = Sequence[annotation]  # type: ignore
             sig_args[ARGS_FIELD_ALIAS] = (spread_annot, default)
         else:
-            name = RESERVED_FIELDS.get(param.name, param.name)
-            sig_args[name] = (annotation, default)
+            sig_args[param.name] = (annotation, default)
     model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
     return create_model("ArgModel", __config__=model_config, **sig_args)
 
+
+def allow_promises(config, schema: Type[BaseModel]):
+    fields = {}
+    for key, value in config.items():
+        field = schema.model_fields[key]
+        if isinstance(value, Promise):
+            fields[key] = (Any, Field(field.default))
+        elif _is_model(field.annotation):
+            new_schema = allow_promises(value, field.annotation)
+            fields[key] = (new_schema, Field(default=field.default))
+        elif isinstance(value, dict) and any(isinstance(v, Promise) for v in value.values()):
+            fields[key] = (Dict, Field(default=field.default))
+        else:
+            fields[key] = (field.annotation, field)
+    return create_model("ArgModel", __config__=schema.model_config, **fields)
+
+
+def _is_model(type_):
+    return issubclass(type_, BaseModel)

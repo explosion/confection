@@ -105,12 +105,6 @@ def warmup_linear(
         step += 1
 
 
-@my_registry.cats("generic_cat.v1")
-def generic_cat(cat: Cat[int, int]) -> Cat[int, int]:
-    cat.name = "generic_cat"
-    return cat
-
-
 @my_registry.cats("int_cat.v1")
 def int_cat(
     value_in: Optional[int] = None, value_out: Optional[int] = None

@@ -2,6 +2,9 @@ import functools
 import sys
 from copy import deepcopy
 from typing import Any, Callable, Iterator, TypeVar
+from pydantic_core import core_schema
+from pydantic import GetCoreSchemaHandler
+
 
 if sys.version_info < (3, 8):
     # Ignoring type for mypy to avoid "Incompatible import" error (https://github.com/python/mypy/issues/4427).
@@ -41,14 +44,21 @@ class Generator(Iterator):
     """
 
     @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls,
+        _source_type: Any,
+        _handler: GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        return core_schema.with_info_plain_validator_function(cls.__validate__)
 
     @classmethod
-    def validate(cls, v):
+    def __validate__(cls, v, info):
         if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
+            print("V", v, info)
             raise TypeError("not a valid iterator")
-        return v
+        else:
+            print("generator", v, info)
+            return v
 
 
 DEFAULT_FROZEN_DICT_ERROR = (
