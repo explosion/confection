@@ -10,11 +10,13 @@ from typing import (
     TypeVar,
     Generic,
     Callable,
+    Literal
 )
+import json
 import catalogue
 import inspect
 from dataclasses import dataclass
-from pydantic import BaseModel, ValidationError, create_model, Field
+from pydantic import BaseModel, ValidationError, ConfigDict, create_model, Field
 from pydantic.fields import FieldInfo
 import copy
 from ._errors import ConfigValidationError
@@ -164,13 +166,14 @@ class registry:
         orig_config = config
         if not is_interpolated:
             config = Config(orig_config).interpolate()
-        filled = fill_config(cls, config, schema=schema, overrides=overrides, validate=validate)
+        filled = fill_config(cls, config, schema=schema, overrides=overrides)
         if validate:
-            # TODO: It sucks to have to resolve here just to do the validation, but
-            # I don't currently have a good way to validate the models without the results.
-            #validate_unresolved(cls, filled, schema=schema)
-            # This is really hard to get right
-            pass
+            full_schema = cls._make_unresolved_schema(schema, filled)
+            print(json.dumps(full_schema.model_json_schema(), indent=2))
+            try:
+                _ = full_schema.model_validate(filled)
+            except ValidationError as e:
+                raise ConfigValidationError(config=config, errors=e.errors()) from None
         filled = Config(filled, section_order=section_order)
         # Merge the original config back to preserve variables if we started
         # with a config that wasn't interpolated. Here, we prefer variables to
@@ -181,20 +184,6 @@ class registry:
                 Config(orig_config, is_interpolated=False), remove_extra=True
             )
         return filled
-
-    @classmethod
-    def _is_in_config(cls, prop: str, config: Union[Dict[str, Any], Config]):
-        """Check whether a nested config property like "section.subsection.key"
-        is in a given config."""
-        tree = prop.split(".")
-        obj = dict(config)
-        while tree:
-            key = tree.pop(0)
-            if isinstance(obj, dict) and key in obj:
-                obj = obj[key]
-            else:
-                return False
-        return True
 
     @classmethod
     def is_promise(cls, obj: Any) -> bool:
@@ -238,6 +227,61 @@ class registry:
             return EmptySchema
         func = cls.get(reg_name, func_name)
         return make_func_schema(func)
+    @classmethod
+    def _make_unresolved_schema(cls, schema: Type[BaseModel], config) -> Type[BaseModel]:
+        """Make a single schema to validate against, representing data with promises unresolved.
+
+        When the config provides a value via a promise, we build a schema for the arguments for the
+        function it references, and insert that into the schema. This subschema describes a dictionary
+        that would be valid to call the referenced function.
+        """
+        if not schema.model_fields:
+            schema = _make_dummy_schema(config)
+        fields = {}
+        for name, field in schema.model_fields.items():
+            if name not in config:
+                fields[name] = (field.annotation, Field(field.default))
+            elif is_promise(config[name]):
+                fields[name] = (cls._make_unresolved_promise_schema(config[name]), Field(field.default))
+            elif field.annotation is None:
+                fields[name] = (Any, Field(field.default))
+            elif issubclass(field.annotation, BaseModel):
+                fields[name] = cls._make_unresolved_schema(field.annotation, config[name])
+            elif isinstance(config[name], dict):
+                fields[name] = cls._make_unresolved_schema(_make_dummy_schema(config), config)
+            else:
+                fields[name] = (field.annotation, Field(...))
+        return create_model("UnresolvedConfig", __config__={"extra": "forbid"}, **fields)
+
+    @classmethod
+    def _make_unresolved_promise_schema(
+        cls, obj: Dict[str, Any]
+    ) -> Type[BaseModel]:
+        """Create a schema for a promise dict (referencing a registry function)
+        by inspecting the function signature.
+        """
+        reg_name, func_name = cls.get_constructor(obj)
+        if not cls.has(reg_name, func_name):
+            return EmptySchema
+        func = cls.get(reg_name, func_name)
+        fields = get_func_fields(func)
+        for name, (field_type, field_info) in list(fields.items()):
+            if name in obj and is_promise(obj[name]):
+                fields[name] = (cls._make_unresolved_promise_schema(obj[name]), Field(field_info.default))
+            elif name in obj and isinstance(obj[name], dict):
+                fields[name] = (cls._make_unresolved_schema(EmptySchema, obj[name]), Field(field_info.default))
+        fields[f"@{reg_name}"] = (str, Field(...))
+        model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
+        return create_model(f"{reg_name} {func_name} model", __config__=model_config, **fields) # type: ignore
+
+
+def _make_dummy_schema(config):
+    fields = {}
+    for name, value in config.items():
+        fields[name] = (Any, Field(...))
+
+    model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
+    return create_model("DummyModel", __config__=model_config, **fields)
 
 
 def alias_generator(name: str) -> str:
@@ -265,8 +309,8 @@ def fill_config(
 
 
 def validate_unresolved(registry, config, schema):
-    promised = insert_promises(registry, config, resolve=False, validate=True)
-    return promised
+    #promised = insert_promises(registry, config, resolve=False, validate=True)
+    schema = make_schema(schema, config)
     #schema = allow_promises(promised, schema)
     #try:
     #    _ = schema.model_validate(promised)
@@ -388,7 +432,13 @@ def apply_overrides(
     return output
 
 
-def make_func_schema(func):
+def make_func_schema(func) -> Type[BaseModel]:
+    fields = get_func_fields(func)
+    model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
+    return create_model("ArgModel", __config__=model_config, **fields) # type: ignore
+
+
+def get_func_fields(func) -> Dict[str, Tuple[Type, FieldInfo]]:
     # Read the argument annotations and defaults from the function signature
     sig_args = {}
     for param in inspect.signature(func).parameters.values():
@@ -399,27 +449,10 @@ def make_func_schema(func):
         # Handle spread arguments and use their annotation as Sequence[whatever]
         if param.kind == param.VAR_POSITIONAL:
             spread_annot = Sequence[annotation]  # type: ignore
-            sig_args[ARGS_FIELD_ALIAS] = (spread_annot, default)
+            sig_args[ARGS_FIELD_ALIAS] = (spread_annot, Field(default))
         else:
-            sig_args[param.name] = (annotation, default)
-    model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
-    return create_model("ArgModel", __config__=model_config, **sig_args)
-
-
-def allow_promises(config, schema: Type[BaseModel]):
-    fields = {}
-    for key, value in config.items():
-        field = schema.model_fields[key]
-        if isinstance(value, Promise):
-            fields[key] = (Any, Field(field.default))
-        elif _is_model(field.annotation):
-            new_schema = allow_promises(value, field.annotation)
-            fields[key] = (new_schema, Field(default=field.default))
-        elif isinstance(value, dict) and any(isinstance(v, Promise) for v in value.values()):
-            fields[key] = (Dict, Field(default=field.default))
-        else:
-            fields[key] = (field.annotation, field)
-    return create_model("ArgModel", __config__=schema.model_config, **fields)
+            sig_args[param.name] = (annotation, Field(default))
+    return sig_args
 
 
 def _is_model(type_):
