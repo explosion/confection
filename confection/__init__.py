@@ -38,7 +38,7 @@ from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ig
 from pydantic.fields import Field as ModelField
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
-from ._fill_config import fill_config, insert_promises, resolve_promises, validate_config
+from ._fill_config import fill_config, insert_promises, resolve_promises, validate_unresolved, validate_resolved
 from ._fill_config import ConfigValidationError
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
@@ -653,7 +653,7 @@ class registry:
         promised = insert_promises(cls, config, resolve=True, validate=validate)
         resolved = resolve_promises(promised, validate=validate)
         if validate:
-            validate_config(resolved, schema)
+            validate_resolved(resolved, schema)
         return resolved
 
     @classmethod
@@ -676,6 +676,10 @@ class registry:
         if not is_interpolated:
             config = Config(orig_config).interpolate()
         filled = fill_config(cls, config, schema=schema, overrides=overrides, validate=validate)
+        if validate:
+            # TODO: It sucks to have to resolve here just to do the validation, but
+            # I don't currently have a good way to validate the models without the results.
+            validate_unresolved(cls, filled, schema=schema)
         filled = Config(filled, section_order=section_order)
         # Merge the original config back to preserve variables if we started
         # with a config that wasn't interpolated. Here, we prefer variables to

@@ -32,6 +32,10 @@ VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 _PromisedType = TypeVar("_PromisedType")
 
 
+class EmptySchema(BaseModel):
+    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
+
+
 @dataclass
 class Promise(Generic[_PromisedType]):
     registry: str
@@ -105,10 +109,6 @@ def alias_generator(name: str) -> str:
     return name
 
 
-class EmptySchema(BaseModel):
-    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
-
-
 def fill_config(
     registry,
     config: Dict[str, Any],
@@ -124,11 +124,10 @@ def fill_config(
     return defaulted
 
 
-def resolve_config(registry, config, schema, validate):
-    promised = insert_promises(registry, config, resolve=True, validate=validate)
-    resolved = resolve_promises(promised, validate=validate)
-    if validate:
-        validate_config(resolved, schema)
+def validate_unresolved(registry, config, schema):
+    promised = insert_promises(registry, config, resolve=True, validate=True)
+    resolved = resolve_promises(promised, validate=True)
+    validate_resolved(resolved, schema)
     return resolved
 
 
@@ -168,9 +167,9 @@ def remove_extra_keys(config: Dict[str, Any], schema: Type[BaseModel]) -> Dict[s
     return output
 
 
-def validate_config(config, schema: Type[BaseModel]):
+def validate_resolved(config, schema: Type[BaseModel]):
     try:
-        result = schema.model_validate(config)
+        _ = schema.model_validate(config)
     except ValidationError as e:
         raise ConfigValidationError(config=config, errors=e.errors()) from None
 
