@@ -17,17 +17,9 @@ from dataclasses import dataclass
 import re
 from pydantic import BaseModel, ValidationError, create_model
 import copy
+from ._errors import ConfigValidationError
+from ._config import Config, RESERVED_FIELDS, ARGS_FIELD, ARGS_FIELD_ALIAS, SECTION_PREFIX, JSON_EXCEPTIONS, VARIABLE_RE
 
-
-RESERVED_FIELDS = {"validate": "validate\u0020"}
-ARGS_FIELD = "*"
-ARGS_FIELD_ALIAS = "VARIABLE_POSITIONAL_ARGS"
-SECTION_PREFIX = "__SECTION__:"
-# Values that shouldn't be loaded during interpolation because it'd cause
-# even explicit string values to be incorrectly parsed as bools/None etc.
-JSON_EXCEPTIONS = ("true", "false", "null")
-# Regex to detect whether a value contains a variable
-VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 
 _PromisedType = TypeVar("_PromisedType")
 
@@ -96,6 +88,144 @@ class Promise(Generic[_PromisedType]):
             getter=getter,
             schema=schema,
         )
+
+
+class registry:
+    @classmethod
+    def has(cls, registry_name: str, func_name: str) -> bool:
+        """Check whether a function is available in a registry."""
+        if not hasattr(cls, registry_name):
+            return False
+        reg = getattr(cls, registry_name)
+        return func_name in reg
+
+    @classmethod
+    def get(cls, registry_name: str, func_name: str) -> Callable:
+        """Get a registered function from a given registry."""
+        if not hasattr(cls, registry_name):
+            raise ValueError(f"Unknown registry: '{registry_name}'")
+        reg = getattr(cls, registry_name)
+        func = reg.get(func_name)
+        if func is None:
+            raise ValueError(f"Could not find '{func_name}' in '{registry_name}'")
+        return func
+
+    @classmethod
+    def resolve(
+        cls,
+        config: Union[Config, Dict[str, Dict[str, Any]]],
+        *,
+        schema: Type[BaseModel] = EmptySchema,
+        overrides: Dict[str, Any] = {},
+        validate: bool = True,
+    ) -> Dict[str, Any]:
+        config = cls.fill(config, schema=schema, overrides=overrides, validate=validate)
+        promised = insert_promises(cls, config, resolve=True, validate=validate)
+        resolved = resolve_promises(promised, validate=validate)
+        if validate:
+            validate_resolved(resolved, schema)
+        return resolved
+
+    @classmethod
+    def fill(
+        cls,
+        config: Union[Config, Dict[str, Dict[str, Any]]],
+        *,
+        schema: Type[BaseModel] = EmptySchema,
+        overrides: Dict[str, Any] = {},
+        validate: bool = True,
+    ) -> Config:
+        if cls.is_promise(config):
+            err_msg = "The top-level config object can't be a reference to a registered function."
+            raise ConfigValidationError(config=config, errors=[{"msg": err_msg}])
+        # If a Config was loaded with interpolate=False, we assume it needs to
+        # be interpolated first, otherwise we take it at face value
+        is_interpolated = not isinstance(config, Config) or config.is_interpolated
+        section_order = config.section_order if isinstance(config, Config) else None
+        orig_config = config
+        if not is_interpolated:
+            config = Config(orig_config).interpolate()
+        filled = fill_config(cls, config, schema=schema, overrides=overrides, validate=validate)
+        if validate:
+            # TODO: It sucks to have to resolve here just to do the validation, but
+            # I don't currently have a good way to validate the models without the results.
+            validate_unresolved(cls, filled, schema=schema)
+        filled = Config(filled, section_order=section_order)
+        # Merge the original config back to preserve variables if we started
+        # with a config that wasn't interpolated. Here, we prefer variables to
+        # allow auto-filling a non-interpolated config without destroying
+        # variable references.
+        if not is_interpolated:
+            filled = filled.merge(
+                Config(orig_config, is_interpolated=False), remove_extra=True
+            )
+        return filled
+
+    @classmethod
+    def _is_in_config(cls, prop: str, config: Union[Dict[str, Any], Config]):
+        """Check whether a nested config property like "section.subsection.key"
+        is in a given config."""
+        tree = prop.split(".")
+        obj = dict(config)
+        while tree:
+            key = tree.pop(0)
+            if isinstance(obj, dict) and key in obj:
+                obj = obj[key]
+            else:
+                return False
+        return True
+
+    @classmethod
+    def is_promise(cls, obj: Any) -> bool:
+        """Check whether an object is a "promise", i.e. contains a reference
+        to a registered function (via a key starting with `"@"`.
+        """
+        if not hasattr(obj, "keys"):
+            return False
+        id_keys = [k for k in obj.keys() if k.startswith("@")]
+        if len(id_keys):
+            return True
+        return False
+
+    @classmethod
+    def get_constructor(cls, obj: Dict[str, Any]) -> Tuple[str, str]:
+        id_keys = [k for k in obj.keys() if k.startswith("@")]
+        if len(id_keys) != 1:
+            err_msg = f"A block can only contain one function registry reference. Got: {id_keys}"
+            raise ConfigValidationError(config=obj, errors=[{"msg": err_msg}])
+        else:
+            key = id_keys[0]
+            value = obj[key]
+            return (key[1:], value)
+
+    @classmethod
+    def parse_args(cls, obj: Dict[str, Any]) -> Tuple[List[Any], Dict[str, Any]]:
+        args = []
+        kwargs = {}
+        for key, value in obj.items():
+            if not key.startswith("@"):
+                if key == ARGS_FIELD:
+                    args = value
+                elif key in RESERVED_FIELDS.values():
+                    continue
+                else:
+                    kwargs[key] = value
+        return args, kwargs
+
+    @classmethod
+    def make_promise_schema(
+        cls, obj: Dict[str, Any], *, resolve: bool = True
+    ) -> Type[BaseModel]:
+        """Create a schema for a promise dict (referencing a registry function)
+        by inspecting the function signature.
+        """
+        reg_name, func_name = cls.get_constructor(obj)
+        if not resolve and not cls.has(reg_name, func_name):
+            return EmptySchema
+        func = cls.get(reg_name, func_name)
+        return make_func_schema(func)
+
+
 
 
 def alias_generator(name: str) -> str:
@@ -258,110 +388,3 @@ def make_func_schema(func):
     model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
     return create_model("ArgModel", __config__=model_config, **sig_args)
 
-
-class ConfigValidationError(ValueError):
-    def __init__(
-        self,
-        *,
-        config=None,
-        errors=None,
-        title: Optional[str] = "Config validation error",
-        desc: Optional[str] = None,
-        parent: Optional[str] = None,
-        show_config: bool = True,
-    ) -> None:
-        """Custom error for validating configs.
-
-        config (Union[Config, Dict[str, Dict[str, Any]], str]): The
-            config the validation error refers to.
-        errors (Union[Sequence[Mapping[str, Any]], Iterable[Dict[str, Any]]]):
-            A list of errors as dicts with keys "loc" (list of strings
-            describing the path of the value), "msg" (validation message
-            to show) and optional "type" (mostly internals).
-            Same format as produced by pydantic's validation error (e.errors()).
-        title (str): The error title.
-        desc (str): Optional error description, displayed below the title.
-        parent (str): Optional parent to use as prefix for all error locations.
-            For example, parent "element" will result in "element -> a -> b".
-        show_config (bool): Whether to print the whole config with the error.
-
-        ATTRIBUTES:
-        config (Union[Config, Dict[str, Dict[str, Any]], str]): The config.
-        errors (Iterable[Dict[str, Any]]): The errors.
-        error_types (Set[str]): All "type" values defined in the errors, if
-            available. This is most relevant for the pydantic errors that define
-            types like "type_error.integer". This attribute makes it easy to
-            check if a config validation error includes errors of a certain
-            type, e.g. to log additional information or custom help messages.
-        title (str): The title.
-        desc (str): The description.
-        parent (str): The parent.
-        show_config (bool): Whether to show the config.
-        text (str): The formatted error text.
-        """
-        self.config = config
-        self.errors = errors
-        self.title = title
-        self.desc = desc
-        self.parent = parent
-        self.show_config = show_config
-        self.error_types = set()
-        if self.errors:
-            for error in self.errors:
-                err_type = error.get("type")
-                if err_type:
-                    self.error_types.add(err_type)
-        self.text = self._format()
-        ValueError.__init__(self, self.text)
-
-    @classmethod
-    def from_error(
-        cls,
-        err: "ConfigValidationError",
-        title: Optional[str] = None,
-        desc: Optional[str] = None,
-        parent: Optional[str] = None,
-        show_config: Optional[bool] = None,
-    ) -> "ConfigValidationError":
-        """Create a new ConfigValidationError based on an existing error, e.g.
-        to re-raise it with different settings. If no overrides are provided,
-        the values from the original error are used.
-
-        err (ConfigValidationError): The original error.
-        title (str): Overwrite error title.
-        desc (str): Overwrite error description.
-        parent (str): Overwrite error parent.
-        show_config (bool): Overwrite whether to show config.
-        RETURNS (ConfigValidationError): The new error.
-        """
-        return cls(
-            config=err.config,
-            errors=err.errors,
-            title=title if title is not None else err.title,
-            desc=desc if desc is not None else err.desc,
-            parent=parent if parent is not None else err.parent,
-            show_config=show_config if show_config is not None else err.show_config,
-        )
-
-    def _format(self) -> str:
-        """Format the error message."""
-        loc_divider = "->"
-        data = []
-        if self.errors:
-            for error in self.errors:
-                err_loc = f" {loc_divider} ".join(
-                    [str(p) for p in error.get("loc", [])]
-                )
-                if self.parent:
-                    err_loc = f"{self.parent} {loc_divider} {err_loc}"
-                data.append((err_loc, error.get("msg")))
-        result = []
-        if self.title:
-            result.append(self.title)
-        if self.desc:
-            result.append(self.desc)
-        if data:
-            result.append("\n".join([f"{entry[0]}\t{entry[1]}" for entry in data]))
-        if self.config and self.show_config:
-            result.append(f"{self.config}")
-        return "\n\n" + "\n".join(result)
