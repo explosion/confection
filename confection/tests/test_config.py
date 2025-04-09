@@ -13,7 +13,6 @@ from pydantic.types import StrictBool
 from confection import Config, ConfigValidationError
 from confection.tests.util import Cat, make_tempdir, my_registry
 from confection.util import Generator, partial
-from confection._fill_config import make_promise_schema
 
 EXAMPLE_CONFIG = """
 [optimizer]
@@ -127,7 +126,7 @@ def test_parse_args():
 
 
 def test_make_promise_schema():
-    schema = make_promise_schema(my_registry, good_catsie, resolve=True)
+    schema = my_registry.make_promise_schema(good_catsie, resolve=True)
     assert "evil" in schema.__fields__
     assert "cute" in schema.__fields__
 

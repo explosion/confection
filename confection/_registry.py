@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError, create_model
 import copy
 from ._errors import ConfigValidationError
 from ._config import Config, RESERVED_FIELDS, ARGS_FIELD, ARGS_FIELD_ALIAS, SECTION_PREFIX, JSON_EXCEPTIONS, VARIABLE_RE
+from .util import is_promise
 
 
 _PromisedType = TypeVar("_PromisedType")
@@ -180,13 +181,8 @@ class registry:
         """Check whether an object is a "promise", i.e. contains a reference
         to a registered function (via a key starting with `"@"`.
         """
-        if not hasattr(obj, "keys"):
-            return False
-        id_keys = [k for k in obj.keys() if k.startswith("@")]
-        if len(id_keys):
-            return True
-        return False
-
+        return is_promise(obj)
+    
     @classmethod
     def get_constructor(cls, obj: Dict[str, Any]) -> Tuple[str, str]:
         id_keys = [k for k in obj.keys() if k.startswith("@")]

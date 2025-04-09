@@ -26,6 +26,7 @@ from typing import (
 
 import srsly
 from ._errors import ConfigValidationError
+from .util import is_promise
 
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
@@ -422,7 +423,7 @@ class Config(dict):
                 if hasattr(value, "items"):
                     # Reference to a function with no arguments, serialize
                     # inline as a dict and don't create new section
-                    if registry.is_promise(value) and len(value) == 1 and is_kwarg:
+                    if is_promise(value) and len(value) == 1 and is_kwarg:
                         flattened.set(section_name, key, try_dump_json(value, node))
                     else:
                         queue.append((path + (key,), value))
@@ -485,4 +486,76 @@ def _mask_positional_args(name: str) -> List[Optional[str]]:
     return stable_name
 
 
+def try_load_json(value: str) -> Any:
+    """Load a JSON string if possible, otherwise default to original value."""
+    try:
+        return srsly.json_loads(value)
+    except Exception:
+        return value
 
+
+def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") -> str:
+    """Dump a config value as JSON and output user-friendly error if it fails."""
+    # Special case if we have a variable: it's already a string so don't dump
+    # to preserve ${x:y} vs. "${x:y}"
+    if isinstance(value, str) and VARIABLE_RE.search(value):
+        return value
+    if isinstance(value, str) and value.replace(".", "", 1).isdigit():
+        # Work around values that are strings but numbers
+        value = f'"{value}"'
+    try:
+        value = srsly.json_dumps(value)
+        value = re.sub(r"\$([^{])", "$$\1", value)
+        value = re.sub(r"\$$", "$$", value)
+        return value
+    except Exception as e:
+        err_msg = (
+            f"Couldn't serialize config value of type {type(value)}: {e}. Make "
+            f"sure all values in your config are JSON-serializable. If you want "
+            f"to include Python objects, use a registered function that returns "
+            f"the object instead."
+        )
+        raise ConfigValidationError(config=data, desc=err_msg) from e
+
+
+def deep_merge_configs(
+    config: Union[Dict[str, Any], Config],
+    defaults: Union[Dict[str, Any], Config],
+    *,
+    remove_extra: bool = False,
+) -> Union[Dict[str, Any], Config]:
+    """Deep merge two configs."""
+    if remove_extra:
+        # Filter out values in the original config that are not in defaults
+        keys = list(config.keys())
+        for key in keys:
+            if key not in defaults:
+                del config[key]
+    for key, value in defaults.items():
+        if isinstance(value, dict):
+            node = config.setdefault(key, {})
+            if not isinstance(node, dict):
+                continue
+            value_promises = [k for k in value if k.startswith("@")]
+            value_promise = value_promises[0] if value_promises else None
+            node_promises = [k for k in node if k.startswith("@")] if node else []
+            node_promise = node_promises[0] if node_promises else None
+            # We only update the block from defaults if it refers to the same
+            # registered function
+            if (
+                value_promise
+                and node_promise
+                and (
+                    value_promise in node
+                    and node[value_promise] != value[value_promise]
+                )
+            ):
+                continue
+            if node_promise and (
+                node_promise not in value or node[node_promise] != value[node_promise]
+            ):
+                continue
+            defaults = deep_merge_configs(node, value, remove_extra=remove_extra)
+        elif key not in config:
+            config[key] = value
+    return config

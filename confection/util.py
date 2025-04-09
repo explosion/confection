@@ -141,3 +141,12 @@ class SimpleFrozenList(list):
 
     def __deepcopy__(self, memo):
         return self.__class__(deepcopy(v) for v in self)
+
+
+def is_promise(obj) -> bool:
+    if not hasattr(obj, "keys"):
+        return False
+    id_keys = [k for k in obj.keys() if k.startswith("@")]
+    if len(id_keys):
+        return True
+    return False
