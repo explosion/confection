@@ -24,7 +24,6 @@ from pydantic.types import StrictBool
 from confection import Config, ConfigValidationError, EmptySchema
 from confection.tests.util import Cat, make_tempdir, my_registry
 from confection.util import Generator, partial
-from confection._fill_config import make_promise_schema
 
 
 class IntsSchema(BaseModel):

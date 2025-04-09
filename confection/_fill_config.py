@@ -142,8 +142,8 @@ def fill_defaults(
             else:
                 output[name] = field.default
     for key, value in output.items():
-        if is_promise(value):
-            schema = make_promise_schema(registry, value, resolve=False)
+        if registry.is_promise(value):
+            schema = registry.make_promise_schema(value, resolve=False)
             value = fill_defaults(registry, value, schema=schema)
             output[key] = value
         elif isinstance(value, dict):
@@ -151,7 +151,9 @@ def fill_defaults(
     return output
 
 
-def remove_extra_keys(config: Dict[str, Any], schema: Type[BaseModel]) -> Dict[str, Any]:
+def remove_extra_keys(
+    config: Dict[str, Any], schema: Type[BaseModel]
+) -> Dict[str, Any]:
     """Remove keys from the config that aren't in the schema.
     This is used when validate=False
     """
@@ -161,7 +163,9 @@ def remove_extra_keys(config: Dict[str, Any], schema: Type[BaseModel]) -> Dict[s
     for field_name, field_schema in schema.model_fields.items():
         if field_name in config:
             if hasattr(field_schema.annotation, "model_fields"):
-                output[field_name] = remove_extra_keys(config[field_name], field_schema.annotation)
+                output[field_name] = remove_extra_keys(
+                    config[field_name], field_schema.annotation
+                )
             else:
                 output[field_name] = config[field_name]
     return output
@@ -175,7 +179,7 @@ def validate_resolved(config, schema: Type[BaseModel]):
 
 
 def insert_promises(
-        registry, config: Dict[str, Dict[str, Any]], resolve: bool, validate: bool
+    registry, config: Dict[str, Dict[str, Any]], resolve: bool, validate: bool
 ) -> Dict[str, Dict[str, Any]]:
     """Create a version of a config dict where promises are recognised and replaced by Promise
     dataclasses
@@ -183,12 +187,16 @@ def insert_promises(
     output = {}
     for key, value in config.items():
         v_key = RESERVED_FIELDS.get(key, key)
-        if is_promise(value):
+        if registry.is_promise(value):
             output[v_key] = Promise.from_dict(
-                registry, insert_promises(registry, value, resolve=resolve, validate=validate), validate=validate
+                registry,
+                insert_promises(registry, value, resolve=resolve, validate=validate),
+                validate=validate,
             )
         elif isinstance(value, dict):
-            output[v_key] = insert_promises(registry, value, resolve=resolve, validate=validate)
+            output[v_key] = insert_promises(
+                registry, value, resolve=resolve, validate=validate
+            )
         else:
             output[v_key] = value
     return output
@@ -228,26 +236,6 @@ def apply_overrides(
             raise ConfigValidationError(errors=err, title=err_title)
         node[path[-1]] = value
     return output
-
-
-def is_promise(obj) -> bool:
-    if not hasattr(obj, "keys"):
-        return False
-    id_keys = [k for k in obj.keys() if k.startswith("@")]
-    if len(id_keys):
-        return True
-    return False
-
-
-def make_promise_schema(registry, obj, resolve: bool) -> Type[BaseModel]:
-    """Create a schema for a promise dict (referencing a registry function)
-    by inspecting the function signature.
-    """
-    reg_name, func_name = registry.get_constructor(obj)
-    if not resolve and not registry.has(reg_name, func_name):
-        return EmptySchema
-    func = registry.get(reg_name, func_name)
-    return make_func_schema(func)
 
 
 def make_func_schema(func):
@@ -361,7 +349,9 @@ class ConfigValidationError(ValueError):
         data = []
         if self.errors:
             for error in self.errors:
-                err_loc = f" {loc_divider} ".join([str(p) for p in error.get("loc", [])])
+                err_loc = f" {loc_divider} ".join(
+                    [str(p) for p in error.get("loc", [])]
+                )
                 if self.parent:
                     err_loc = f"{self.parent} {loc_divider} {err_loc}"
                 data.append((err_loc, error.get("msg")))
