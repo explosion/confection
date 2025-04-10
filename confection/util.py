@@ -2,9 +2,9 @@ import functools
 import sys
 from copy import deepcopy
 from typing import Any, Callable, Iterator, TypeVar
-from pydantic_core import core_schema
-from pydantic import GetCoreSchemaHandler
 
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import core_schema
 
 if sys.version_info < (3, 8):
     # Ignoring type for mypy to avoid "Incompatible import" error (https://github.com/python/mypy/issues/4427).

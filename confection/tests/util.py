@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Generator, Generic, Iterable, List, Optional, TypeVar, Union
 
 import catalogue
-
 from pydantic.types import StrictBool  # type: ignore
 
 import confection

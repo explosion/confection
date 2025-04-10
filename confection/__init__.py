@@ -1,29 +1,24 @@
 import re
-from typing import (
-    Any,
-    Dict,
-    Union,
-)
+from typing import Any, Dict, Union
 
 import srsly
-
 from pydantic import BaseModel
 from pydantic.fields import Field as ModelField
 
-from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
-from ._errors import ConfigValidationError
-from ._registry import registry
 from ._config import (
-    Config,
-    VARIABLE_RE,
     ARGS_FIELD,
     ARGS_FIELD_ALIAS,
+    JSON_EXCEPTIONS,
     RESERVED_FIELDS,
     SECTION_PREFIX,
-    JSON_EXCEPTIONS,
-    try_load_json,
+    VARIABLE_RE,
+    Config,
     try_dump_json,
+    try_load_json,
 )
+from ._errors import ConfigValidationError
+from ._registry import registry
+from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 
 
 def alias_generator(name: str) -> str:

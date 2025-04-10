@@ -14,20 +14,12 @@ from configparser import (
     ParsingError,
 )
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-    cast,
-)
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import srsly
+
 from ._errors import ConfigValidationError
 from .util import is_promise
-
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)

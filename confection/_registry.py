@@ -1,34 +1,35 @@
+import copy
+import inspect
+import json
+from dataclasses import dataclass
 from typing import (
     Any,
-    Union,
+    Callable,
     Dict,
+    Generic,
     List,
-    Tuple,
-    Type,
+    Literal,
     Optional,
     Sequence,
+    Tuple,
+    Type,
     TypeVar,
-    Generic,
-    Callable,
-    Literal,
+    Union,
 )
-import json
+
 import catalogue
-import inspect
-from dataclasses import dataclass
-from pydantic import BaseModel, ValidationError, ConfigDict, create_model, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 from pydantic.fields import FieldInfo
-import copy
-from ._errors import ConfigValidationError
+
 from ._config import (
-    Config,
     ARGS_FIELD,
     ARGS_FIELD_ALIAS,
     RESERVED_FIELDS,
     RESERVED_FIELDS_REVERSE,
+    Config,
 )
+from ._errors import ConfigValidationError
 from .util import is_promise
-
 
 _PromisedType = TypeVar("_PromisedType")
 

@@ -8,17 +8,16 @@ from typing import (
     Dict,
     Iterable,
     List,
+    Literal,
     Optional,
+    Sequence,
     Tuple,
     Union,
-    Sequence,
-    Literal,
 )
 
 import catalogue
 import pytest
-
-from pydantic import BaseModel, StrictFloat, PositiveInt, constr
+from pydantic import BaseModel, PositiveInt, StrictFloat, constr
 from pydantic.types import StrictBool
 
 from confection import Config, ConfigValidationError
