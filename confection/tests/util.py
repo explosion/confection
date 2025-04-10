@@ -9,11 +9,7 @@ from pathlib import Path
 from typing import Generator, Generic, Iterable, List, Optional, TypeVar, Union
 
 import catalogue
-
-try:
-    from pydantic.v1.types import StrictBool
-except ImportError:
-    from pydantic.types import StrictBool  # type: ignore
+from pydantic.types import StrictBool  # type: ignore
 
 import confection
 
@@ -106,12 +102,6 @@ def warmup_linear(
             )
         yield factor * initial_rate
         step += 1
-
-
-@my_registry.cats("generic_cat.v1")
-def generic_cat(cat: Cat[int, int]) -> Cat[int, int]:
-    cat.name = "generic_cat"
-    return cat
 
 
 @my_registry.cats("int_cat.v1")

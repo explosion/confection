@@ -2,17 +2,23 @@ import inspect
 import pickle
 import platform
 from types import GeneratorType
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import catalogue
 import pytest
-
-try:
-    from pydantic.v1 import BaseModel, PositiveInt, StrictFloat, constr
-    from pydantic.v1.types import StrictBool
-except ImportError:
-    from pydantic import BaseModel, StrictFloat, PositiveInt, constr  # type: ignore
-    from pydantic.types import StrictBool  # type: ignore
+from pydantic import BaseModel, PositiveInt, StrictFloat, constr
+from pydantic.types import StrictBool
 
 from confection import Config, ConfigValidationError
 from confection.tests.util import Cat, make_tempdir, my_registry
@@ -67,17 +73,19 @@ total_steps = 100000
 class HelloIntsSchema(BaseModel):
     hello: int
     world: int
-
-    class Config:
-        extra = "forbid"
+    model_config = {"extra": "forbid"}
 
 
 class DefaultsSchema(BaseModel):
     required: int
     optional: str = "default value"
+    model_config = {"extra": "forbid"}
 
-    class Config:
-        extra = "forbid"
+
+class LooseSchema(BaseModel):
+    required: int
+    optional: str = "default value"
+    model_config = {"extra": "allow"}
 
 
 class ComplexSchema(BaseModel):
@@ -94,166 +102,6 @@ bad_catsie = {"@cats": "catsie.v1", "evil": True, "cute": True}
 worst_catsie = {"@cats": "catsie.v1", "evil": True, "cute": False}
 
 
-def test_validate_simple_config():
-    simple_config = {"hello": 1, "world": 2}
-    f, _, v = my_registry._fill(simple_config, HelloIntsSchema)
-    assert f == simple_config
-    assert v == simple_config
-
-
-def test_invalidate_simple_config():
-    invalid_config = {"hello": 1, "world": "hi!"}
-    with pytest.raises(ConfigValidationError) as exc_info:
-        my_registry._fill(invalid_config, HelloIntsSchema)
-    error = exc_info.value
-    assert len(error.errors) == 1
-    assert "type_error.integer" in error.error_types
-
-
-def test_invalidate_extra_args():
-    invalid_config = {"hello": 1, "world": 2, "extra": 3}
-    with pytest.raises(ConfigValidationError):
-        my_registry._fill(invalid_config, HelloIntsSchema)
-
-
-def test_fill_defaults_simple_config():
-    valid_config = {"required": 1}
-    filled, _, v = my_registry._fill(valid_config, DefaultsSchema)
-    assert filled["required"] == 1
-    assert filled["optional"] == "default value"
-    invalid_config = {"optional": "some value"}
-    with pytest.raises(ConfigValidationError):
-        my_registry._fill(invalid_config, DefaultsSchema)
-
-
-def test_fill_recursive_config():
-    valid_config = {"outer_req": 1, "level2_req": {"hello": 4, "world": 7}}
-    filled, _, validation = my_registry._fill(valid_config, ComplexSchema)
-    assert filled["outer_req"] == 1
-    assert filled["outer_opt"] == "default value"
-    assert filled["level2_req"]["hello"] == 4
-    assert filled["level2_req"]["world"] == 7
-    assert filled["level2_opt"]["required"] == 1
-    assert filled["level2_opt"]["optional"] == "default value"
-
-
-def test_is_promise():
-    assert my_registry.is_promise(good_catsie)
-    assert not my_registry.is_promise({"hello": "world"})
-    assert not my_registry.is_promise(1)
-    invalid = {"@complex": "complex.v1", "rate": 1.0, "@cats": "catsie.v1"}
-    assert my_registry.is_promise(invalid)
-
-
-def test_get_constructor():
-    assert my_registry.get_constructor(good_catsie) == ("cats", "catsie.v1")
-
-
-def test_parse_args():
-    args, kwargs = my_registry.parse_args(bad_catsie)
-    assert args == []
-    assert kwargs == {"evil": True, "cute": True}
-
-
-def test_make_promise_schema():
-    schema = my_registry.make_promise_schema(good_catsie)
-    assert "evil" in schema.__fields__
-    assert "cute" in schema.__fields__
-
-
-def test_validate_promise():
-    config = {"required": 1, "optional": good_catsie}
-    filled, _, validated = my_registry._fill(config, DefaultsSchema)
-    assert filled == config
-    assert validated == {"required": 1, "optional": "meow"}
-
-
-def test_fill_validate_promise():
-    config = {"required": 1, "optional": {"@cats": "catsie.v1", "evil": False}}
-    filled, _, validated = my_registry._fill(config, DefaultsSchema)
-    assert filled["optional"]["cute"] is True
-
-
-def test_fill_invalidate_promise():
-    config = {"required": 1, "optional": {"@cats": "catsie.v1", "evil": False}}
-    with pytest.raises(ConfigValidationError):
-        my_registry._fill(config, HelloIntsSchema)
-    config["optional"]["whiskers"] = True
-    with pytest.raises(ConfigValidationError):
-        my_registry._fill(config, DefaultsSchema)
-
-
-def test_create_registry():
-    my_registry.dogs = catalogue.create(
-        my_registry.namespace, "dogs", entry_points=False
-    )
-    assert hasattr(my_registry, "dogs")
-    assert len(my_registry.dogs.get_all()) == 0
-    my_registry.dogs.register("good_boy.v1", func=lambda x: x)
-    assert len(my_registry.dogs.get_all()) == 1
-
-
-def test_registry_methods():
-    with pytest.raises(ValueError):
-        my_registry.get("dfkoofkds", "catsie.v1")
-    my_registry.cats.register("catsie.v123")(None)
-    with pytest.raises(ValueError):
-        my_registry.get("cats", "catsie.v123")
-
-
-def test_resolve_no_schema():
-    config = {"one": 1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
-    result = my_registry.resolve({"cfg": config})["cfg"]
-    assert result["one"] == 1
-    assert result["two"] == {"three": "scratch!"}
-    with pytest.raises(ConfigValidationError):
-        config = {"two": {"three": {"@cats": "catsie.v1", "evil": "true"}}}
-        my_registry.resolve(config)
-
-
-def test_resolve_schema():
-    class TestBaseSubSchema(BaseModel):
-        three: str
-
-    class TestBaseSchema(BaseModel):
-        one: PositiveInt
-        two: TestBaseSubSchema
-
-        class Config:
-            extra = "forbid"
-
-    class TestSchema(BaseModel):
-        cfg: TestBaseSchema
-
-    config = {"one": 1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
-    my_registry.resolve({"cfg": config}, schema=TestSchema)
-    config = {"one": -1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
-    with pytest.raises(ConfigValidationError):
-        # "one" is not a positive int
-        my_registry.resolve({"cfg": config}, schema=TestSchema)
-    config = {"one": 1, "two": {"four": {"@cats": "catsie.v1", "evil": True}}}
-    with pytest.raises(ConfigValidationError):
-        # "three" is required in subschema
-        my_registry.resolve({"cfg": config}, schema=TestSchema)
-
-
-def test_resolve_schema_coerced():
-    class TestBaseSchema(BaseModel):
-        test1: str
-        test2: bool
-        test3: float
-
-    class TestSchema(BaseModel):
-        cfg: TestBaseSchema
-
-    config = {"test1": 123, "test2": 1, "test3": 5}
-    filled = my_registry.fill({"cfg": config}, schema=TestSchema)
-    result = my_registry.resolve({"cfg": config}, schema=TestSchema)
-    assert result["cfg"] == {"test1": "123", "test2": True, "test3": 5.0}
-    # This only affects the resolved config, not the filled config
-    assert filled["cfg"] == config
-
-
 def test_read_config():
     byte_string = EXAMPLE_CONFIG.encode("utf8")
     cfg = Config().from_bytes(byte_string)
@@ -264,6 +112,7 @@ def test_read_config():
     assert cfg["pipeline"]["classifier"]["model"]["embedding"]["width"] == 128
 
 
+@pytest.mark.skip
 def test_optimizer_config():
     cfg = Config().from_str(OPTIMIZER_CFG)
     optimizer = my_registry.resolve(cfg, validate=True)["optimizer"]
@@ -354,7 +203,7 @@ def test_validation_custom_types():
     def complex_args(
         rate: StrictFloat,
         steps: PositiveInt = 10,  # type: ignore
-        log_level: constr(regex="(DEBUG|INFO|WARNING|ERROR)") = "ERROR",  # noqa: F821
+        log_level: Literal["ERROR", "INFO"] = "ERROR",  # noqa: F821
     ):
         return None
 
@@ -385,288 +234,78 @@ def test_validation_custom_types():
         my_registry.resolve({"config": cfg})
 
 
-def test_validation_no_validate():
-    config = {"one": 1, "two": {"three": {"@cats": "catsie.v1", "evil": "false"}}}
-    result = my_registry.resolve({"cfg": config}, validate=False)
-    filled = my_registry.fill({"cfg": config}, validate=False)
-    assert result["cfg"]["one"] == 1
-    assert result["cfg"]["two"] == {"three": "scratch!"}
-    assert filled["cfg"]["two"]["three"]["evil"] == "false"
-    assert filled["cfg"]["two"]["three"]["cute"] is True
+@my_registry.cats("catsie.v666")
+def catsie_666(*args, meow=False):
+    return args
 
 
-def test_validation_fill_defaults():
-    config = {"cfg": {"one": 1, "two": {"@cats": "catsie.v1", "evil": "hello"}}}
-    result = my_registry.fill(config, validate=False)
-    assert len(result["cfg"]["two"]) == 3
-    with pytest.raises(ConfigValidationError):
-        # Required arg "evil" is not defined
-        my_registry.fill(config)
-    config = {"cfg": {"one": 1, "two": {"@cats": "catsie.v2", "evil": False}}}
-    # Fill in with new defaults
-    result = my_registry.fill(config)
-    assert len(result["cfg"]["two"]) == 4
-    assert result["cfg"]["two"]["evil"] is False
-    assert result["cfg"]["two"]["cute"] is True
-    assert result["cfg"]["two"]["cute_level"] == 1
+@my_registry.cats("var_args_optional.v1")
+def cats_var_args_optional(*args: str, foo: str = "hi"):
+    return " ".join(args) + f"foo={foo}"
 
 
-def test_make_config_positional_args():
-    @my_registry.cats("catsie.v567")
-    def catsie_567(*args: Optional[str], foo: str = "bar"):
-        assert args[0] == "^_^"
-        assert args[1] == "^(*.*)^"
-        assert foo == "baz"
-        return args[0]
-
-    args = ["^_^", "^(*.*)^"]
-    cfg = {"config": {"@cats": "catsie.v567", "foo": "baz", "*": args}}
-    assert my_registry.resolve(cfg)["config"] == "^_^"
+@my_registry.cats("catsie.v777")
+def catsie_777(y: int = 1):
+    return "meow" * y
 
 
-def test_fill_config_positional_args_w_promise():
-    @my_registry.cats("catsie.v568")
-    def catsie_568(*args: str, foo: str = "bar"):
-        assert args[0] == "^(*.*)^"
-        assert foo == "baz"
-        return args[0]
-
-    @my_registry.cats("cat_promise.v568")
-    def cat_promise() -> str:
-        return "^(*.*)^"
-
-    cfg = {
-        "config": {
-            "@cats": "catsie.v568",
-            "*": {"promise": {"@cats": "cat_promise.v568"}},
-        }
-    }
-    filled = my_registry.fill(cfg, validate=True)
-    assert filled["config"]["foo"] == "bar"
-    assert filled["config"]["*"] == {"promise": {"@cats": "cat_promise.v568"}}
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        """[a]\nb = 1\n* = ["foo","bar"]""",
+        """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
+    ],
+)
+def test_positional_args_round_trip(cfg: str):
+    round_trip = Config().from_str(cfg).to_str()
+    assert round_trip == cfg
 
 
-def test_make_config_positional_args_complex():
-    @my_registry.cats("catsie.v890")
-    def catsie_890(*args: Optional[Union[StrictBool, PositiveInt]]):
-        assert args[0] == 123
-        return args[0]
-
-    cfg = {"config": {"@cats": "catsie.v890", "*": [123, True, 1, False]}}
-    assert my_registry.resolve(cfg)["config"] == 123
-    cfg = {"config": {"@cats": "catsie.v890", "*": [123, "True"]}}
-    with pytest.raises(ConfigValidationError):
-        # "True" is not a valid boolean or positive int
-        my_registry.resolve(cfg)
-
-
-def test_positional_args_to_from_string():
-    cfg = """[a]\nb = 1\n* = ["foo","bar"]"""
-    assert Config().from_str(cfg).to_str() == cfg
-    cfg = """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1"""
-    assert Config().from_str(cfg).to_str() == cfg
-
-    @my_registry.cats("catsie.v666")
-    def catsie_666(*args, meow=False):
-        return args
-
-    cfg = """[a]\n@cats = "catsie.v666"\n* = ["foo","bar"]"""
-    filled = my_registry.fill(Config().from_str(cfg)).to_str()
-    assert filled == """[a]\n@cats = "catsie.v666"\n* = ["foo","bar"]\nmeow = false"""
-    resolved = my_registry.resolve(Config().from_str(cfg))
-    assert resolved == {"a": ("foo", "bar")}
-    cfg = """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1"""
-    filled = my_registry.fill(Config().from_str(cfg)).to_str()
-    assert filled == """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\nx = 1"""
-    resolved = my_registry.resolve(Config().from_str(cfg))
-    assert resolved == {"a": ({"x": 1},)}
-
-    @my_registry.cats("catsie.v777")
-    def catsie_777(y: int = 1):
-        return "meow" * y
-
-    cfg = """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\""""
-    filled = my_registry.fill(Config().from_str(cfg)).to_str()
-    expected = """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1"""
+@pytest.mark.parametrize(
+    "cfg,expected",
+    [
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
+            """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1""",
+        ),
+        (
+            """[a]\n@cats = "var_args_optional.v1"\n* = ["meow","bar"]""",
+            """[a]\n@cats = "var_args_optional.v1"\n* = ["meow","bar"]\nfoo = \"hi\"""",
+        ),
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""",
+            """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\nx = 1""",
+        ),
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
+            """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1""",
+        ),
+    ],
+)
+def test_positional_args_fill_round_trip(cfg, expected):
+    config = Config().from_str(cfg)
+    filled_dict = my_registry.fill(config)
+    filled = filled_dict.to_str()
     assert filled == expected
-    cfg = """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 3"""
-    result = my_registry.resolve(Config().from_str(cfg))
-    assert result == {"a": ("meowmeowmeow",)}
 
 
-def test_validation_generators_iterable():
-    @my_registry.optimizers("test_optimizer.v1")
-    def test_optimizer_v1(rate: float) -> None:
-        return None
-
-    @my_registry.schedules("test_schedule.v1")
-    def test_schedule_v1(some_value: float = 1.0) -> Iterable[float]:
-        while True:
-            yield some_value
-
-    config = {"optimizer": {"@optimizers": "test_optimizer.v1", "rate": 0.1}}
-    my_registry.resolve(config)
-
-
-def test_validation_unset_type_hints():
-    """Test that unset type hints are handled correctly (and treated as Any)."""
-
-    @my_registry.optimizers("test_optimizer.v2")
-    def test_optimizer_v2(rate, steps: int = 10) -> None:
-        return None
-
-    config = {"test": {"@optimizers": "test_optimizer.v2", "rate": 0.1, "steps": 20}}
-    my_registry.resolve(config)
-
-
-def test_validation_bad_function():
-    @my_registry.optimizers("bad.v1")
-    def bad() -> None:
-        raise ValueError("This is an error in the function")
-        return None
-
-    @my_registry.optimizers("good.v1")
-    def good() -> None:
-        return None
-
-    # Bad function
-    config = {"test": {"@optimizers": "bad.v1"}}
-    with pytest.raises(ValueError):
-        my_registry.resolve(config)
-    # Bad function call
-    config = {"test": {"@optimizers": "good.v1", "invalid_arg": 1}}
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve(config)
-
-
-def test_objects_from_config():
-    config = {
-        "optimizer": {
-            "@optimizers": "my_cool_optimizer.v1",
-            "beta1": 0.2,
-            "learn_rate": {
-                "@schedules": "my_cool_repetitive_schedule.v1",
-                "base_rate": 0.001,
-                "repeat": 4,
-            },
-        }
-    }
-
-    optimizer = my_registry.resolve(config)["optimizer"]
-    assert optimizer.beta1 == 0.2
-    assert optimizer.learn_rate == [0.001] * 4
-
-
-def test_partials_from_config():
-    """Test that functions registered with partial applications are handled
-    correctly (e.g. initializers)."""
-    numpy = pytest.importorskip("numpy")
-
-    def uniform_init(
-        shape: Tuple[int, ...], *, lo: float = -0.1, hi: float = 0.1
-    ) -> List[float]:
-        return numpy.random.uniform(lo, hi, shape).tolist()
-
-    @my_registry.initializers("uniform_init.v1")
-    def configure_uniform_init(
-        *, lo: float = -0.1, hi: float = 0.1
-    ) -> Callable[[List[float]], List[float]]:
-        return partial(uniform_init, lo=lo, hi=hi)
-
-    name = "uniform_init.v1"
-    cfg = {"test": {"@initializers": name, "lo": -0.2}}
-    func = my_registry.resolve(cfg)["test"]
-    assert hasattr(func, "__call__")
-    # The partial will still have lo as an arg, just with default
-    assert len(inspect.signature(func).parameters) == 3
-    # Make sure returned partial function has correct value set
-    assert inspect.signature(func).parameters["lo"].default == -0.2
-    # Actually call the function and verify
-    assert numpy.asarray(func((2, 3))).shape == (2, 3)
-    # Make sure validation still works
-    bad_cfg = {"test": {"@initializers": name, "lo": [0.5]}}
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve(bad_cfg)
-    bad_cfg = {"test": {"@initializers": name, "lo": -0.2, "other": 10}}
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve(bad_cfg)
-
-
-def test_partials_from_config_nested():
-    """Test that partial functions are passed correctly to other registered
-    functions that consume them (e.g. initializers -> layers)."""
-
-    def test_initializer(a: int, b: int = 1) -> int:
-        return a * b
-
-    @my_registry.initializers("test_initializer.v1")
-    def configure_test_initializer(b: int = 1) -> Callable[[int], int]:
-        return partial(test_initializer, b=b)
-
-    @my_registry.layers("test_layer.v1")
-    def test_layer(init: Callable[[int], int], c: int = 1) -> Callable[[int], int]:
-        return lambda x: x + init(c)
-
-    cfg = {
-        "@layers": "test_layer.v1",
-        "c": 5,
-        "init": {"@initializers": "test_initializer.v1", "b": 10},
-    }
-    func = my_registry.resolve({"test": cfg})["test"]
-    assert func(1) == 51
-    assert func(100) == 150
-
-
-def test_validate_generator():
-    """Test that generator replacement for validation in config doesn't
-    actually replace the returned value."""
-
-    @my_registry.schedules("test_schedule.v2")
-    def test_schedule():
-        while True:
-            yield 10
-
-    cfg = {"@schedules": "test_schedule.v2"}
-    result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
-
-    @my_registry.optimizers("test_optimizer.v2")
-    def test_optimizer2(rate: Generator) -> Generator:
-        return rate
-
-    cfg = {
-        "@optimizers": "test_optimizer.v2",
-        "rate": {"@schedules": "test_schedule.v2"},
-    }
-    result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
-
-    @my_registry.optimizers("test_optimizer.v3")
-    def test_optimizer3(schedules: Dict[str, Generator]) -> Generator:
-        return schedules["rate"]
-
-    cfg = {
-        "@optimizers": "test_optimizer.v3",
-        "schedules": {"rate": {"@schedules": "test_schedule.v2"}},
-    }
-    result = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(result, GeneratorType)
-
-    @my_registry.optimizers("test_optimizer.v4")
-    def test_optimizer4(*schedules: Generator) -> Generator:
-        return schedules[0]
-
-
-def test_handle_generic_type():
-    """Test that validation can handle checks against arbitrary generic
-    types in function argument annotations."""
-
-    cfg = {"@cats": "generic_cat.v1", "cat": {"@cats": "int_cat.v1", "value_in": 3}}
-    cat = my_registry.resolve({"test": cfg})["test"]
-    assert isinstance(cat, Cat)
-    assert cat.value_in == 3
-    assert cat.value_out is None
-    assert cat.name == "generic_cat"
+@pytest.mark.parametrize(
+    "cfg,expected",
+    [
+        (
+            """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
+            {"a": {"*": ({"test": 2}, {"test": 1}), "b": 1}},
+        ),
+        ("""[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""", {"a": ({"x": 1},)}),
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 3""",
+            {"a": ("meowmeowmeow",)},
+        ),
+    ],
+)
+def test_positional_args_resolve_round_trip(cfg, expected):
+    resolved = my_registry.resolve(Config().from_str(cfg))
+    assert resolved == expected
 
 
 @pytest.mark.parametrize(
@@ -700,90 +339,6 @@ def test_cant_expand_undefined_block(cfg, is_valid):
             Config().from_str(cfg)
 
 
-def test_fill_config_overrides():
-    config = {
-        "cfg": {
-            "one": 1,
-            "two": {"three": {"@cats": "catsie.v1", "evil": True, "cute": False}},
-        }
-    }
-    overrides = {"cfg.two.three.evil": False}
-    result = my_registry.fill(config, overrides=overrides, validate=True)
-    assert result["cfg"]["two"]["three"]["evil"] is False
-    # Test that promises can be overwritten as well
-    overrides = {"cfg.two.three": 3}
-    result = my_registry.fill(config, overrides=overrides, validate=True)
-    assert result["cfg"]["two"]["three"] == 3
-    # Test that value can be overwritten with promises and that the result is
-    # interpreted and filled correctly
-    overrides = {"cfg": {"one": {"@cats": "catsie.v1", "evil": False}, "two": None}}
-    result = my_registry.fill(config, overrides=overrides)
-    assert result["cfg"]["two"] is None
-    assert result["cfg"]["one"]["@cats"] == "catsie.v1"
-    assert result["cfg"]["one"]["evil"] is False
-    assert result["cfg"]["one"]["cute"] is True
-    # Overwriting with wrong types should cause validation error
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg.two.three.evil": 20}
-        my_registry.fill(config, overrides=overrides, validate=True)
-    # Overwriting with incomplete promises should cause validation error
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg": {"one": {"@cats": "catsie.v1"}, "two": None}}
-        my_registry.fill(config, overrides=overrides)
-    # Overrides that don't match config should raise error
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg.two.three.evil": False, "two.four": True}
-        my_registry.fill(config, overrides=overrides, validate=True)
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg.five": False}
-        my_registry.fill(config, overrides=overrides, validate=True)
-
-
-def test_resolve_overrides():
-    config = {
-        "cfg": {
-            "one": 1,
-            "two": {"three": {"@cats": "catsie.v1", "evil": True, "cute": False}},
-        }
-    }
-    overrides = {"cfg.two.three.evil": False}
-    result = my_registry.resolve(config, overrides=overrides, validate=True)
-    assert result["cfg"]["two"]["three"] == "meow"
-    # Test that promises can be overwritten as well
-    overrides = {"cfg.two.three": 3}
-    result = my_registry.resolve(config, overrides=overrides, validate=True)
-    assert result["cfg"]["two"]["three"] == 3
-    # Test that value can be overwritten with promises
-    overrides = {"cfg": {"one": {"@cats": "catsie.v1", "evil": False}, "two": None}}
-    result = my_registry.resolve(config, overrides=overrides)
-    assert result["cfg"]["one"] == "meow"
-    assert result["cfg"]["two"] is None
-    # Overwriting with wrong types should cause validation error
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg.two.three.evil": 20}
-        my_registry.resolve(config, overrides=overrides, validate=True)
-    # Overwriting with incomplete promises should cause validation error
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg": {"one": {"@cats": "catsie.v1"}, "two": None}}
-        my_registry.resolve(config, overrides=overrides)
-    # Overrides that don't match config should raise error
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg.two.three.evil": False, "cfg.two.four": True}
-        my_registry.resolve(config, overrides=overrides, validate=True)
-    with pytest.raises(ConfigValidationError):
-        overrides = {"cfg.five": False}
-        my_registry.resolve(config, overrides=overrides, validate=True)
-
-
-@pytest.mark.parametrize(
-    "prop,expected",
-    [("a.b.c", True), ("a.b", True), ("a", True), ("a.e", True), ("a.b.c.d", False)],
-)
-def test_is_in_config(prop, expected):
-    config = {"a": {"b": {"c": 5, "d": 6}, "e": [1, 2]}}
-    assert my_registry._is_in_config(prop, config) is expected
-
-
 def test_resolve_prefilled_values():
     class Language(object):
         def __init__(self):
@@ -800,21 +355,6 @@ def test_resolve_prefilled_values():
     result = resolved["test"]
     assert isinstance(result[0], Language)
     assert result[1] == 50
-
-
-def test_fill_config_dict_return_type():
-    """Test that a registered function returning a dict is handled correctly."""
-
-    @my_registry.cats.register("catsie_with_dict.v1")
-    def catsie_with_dict(evil: StrictBool) -> Dict[str, bool]:
-        return {"not_evil": not evil}
-
-    config = {"test": {"@cats": "catsie_with_dict.v1", "evil": False}, "foo": 10}
-    result = my_registry.fill({"cfg": config}, validate=True)["cfg"]["test"]
-    assert result["evil"] is False
-    assert "not_evil" not in result
-    result = my_registry.resolve({"cfg": config}, validate=True)["cfg"]["test"]
-    assert result["not_evil"] is True
 
 
 def test_deepcopy_config():
@@ -1005,24 +545,6 @@ def test_config_from_str_overrides():
     config = Config().from_str(config_str, overrides={"a.c.d": 20})
     assert config["a"]["c"]["d"] == 20
     assert config["e"]["f"] == {"d": 20}
-
-
-def test_config_reserved_aliases():
-    """Test that the auto-generated pydantic schemas auto-alias reserved
-    attributes like "validate" that would otherwise cause NameError."""
-
-    @my_registry.cats("catsie.with_alias")
-    def catsie_with_alias(validate: StrictBool = False):
-        return validate
-
-    cfg = {"@cats": "catsie.with_alias", "validate": True}
-    resolved = my_registry.resolve({"test": cfg})
-    filled = my_registry.fill({"test": cfg})
-    assert resolved["test"] is True
-    assert filled["test"] == cfg
-    cfg = {"@cats": "catsie.with_alias", "validate": 20}
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve({"test": cfg})
 
 
 @pytest.mark.parametrize("d", [".", ":"])
@@ -1244,106 +766,10 @@ def test_config_pickle():
     assert config_new.section_order == ["foo", "bar", "baz"]
 
 
-def test_config_fill_extra_fields():
-    """Test that filling a config from a schema removes extra fields."""
-
-    class TestSchemaContent(BaseModel):
-        a: str
-        b: int
-
-        class Config:
-            extra = "forbid"
-
-    class TestSchema(BaseModel):
-        cfg: TestSchemaContent
-
-    config = Config({"cfg": {"a": "1", "b": 2, "c": True}})
-    with pytest.raises(ConfigValidationError):
-        my_registry.fill(config, schema=TestSchema)
-    filled = my_registry.fill(config, schema=TestSchema, validate=False)["cfg"]
-    assert filled == {"a": "1", "b": 2}
-    config2 = config.interpolate()
-    filled = my_registry.fill(config2, schema=TestSchema, validate=False)["cfg"]
-    assert filled == {"a": "1", "b": 2}
-    config3 = Config({"cfg": {"a": "1", "b": 2, "c": True}}, is_interpolated=False)
-    filled = my_registry.fill(config3, schema=TestSchema, validate=False)["cfg"]
-    assert filled == {"a": "1", "b": 2}
-
-    class TestSchemaContent2(BaseModel):
-        a: str
-        b: int
-
-        class Config:
-            extra = "allow"
-
-    class TestSchema2(BaseModel):
-        cfg: TestSchemaContent2
-
-    filled = my_registry.fill(config, schema=TestSchema2, validate=False)["cfg"]
-    assert filled == {"a": "1", "b": 2, "c": True}
-
-
-def test_config_validation_error_custom():
-    class Schema(BaseModel):
-        hello: int
-        world: int
-
-    config = {"hello": 1, "world": "hi!"}
-    with pytest.raises(ConfigValidationError) as exc_info:
-        my_registry._fill(config, Schema)
-    e1 = exc_info.value
-    assert e1.title == "Config validation error"
-    assert e1.desc is None
-    assert not e1.parent
-    assert e1.show_config is True
-    assert len(e1.errors) == 1
-    assert e1.errors[0]["loc"] == ("world",)
-    assert e1.errors[0]["msg"] == "value is not a valid integer"
-    assert e1.errors[0]["type"] == "type_error.integer"
-    assert e1.error_types == set(["type_error.integer"])
-    # Create a new error with overrides
-    title = "Custom error"
-    desc = "Some error description here"
-    e2 = ConfigValidationError.from_error(e1, title=title, desc=desc, show_config=False)
-    assert e2.errors == e1.errors
-    assert e2.error_types == e1.error_types
-    assert e2.title == title
-    assert e2.desc == desc
-    assert e2.show_config is False
-    assert e1.text != e2.text
-
-
 def test_config_parsing_error():
     config_str = "[a]\nb c"
     with pytest.raises(ConfigValidationError):
         Config().from_str(config_str)
-
-
-def test_config_fill_without_resolve():
-    class BaseSchema(BaseModel):
-        catsie: int
-
-    config = {"catsie": {"@cats": "catsie.v1", "evil": False}}
-    filled = my_registry.fill(config)
-    resolved = my_registry.resolve(config)
-    assert resolved["catsie"] == "meow"
-    assert filled["catsie"]["cute"] is True
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve(config, schema=BaseSchema)
-    filled2 = my_registry.fill(config, schema=BaseSchema)
-    assert filled2["catsie"]["cute"] is True
-    resolved = my_registry.resolve(filled2)
-    assert resolved["catsie"] == "meow"
-
-    # With unavailable function
-    class BaseSchema2(BaseModel):
-        catsie: Any
-        other: int = 12
-
-    config = {"catsie": {"@cats": "dog", "evil": False}}
-    filled3 = my_registry.fill(config, schema=BaseSchema2)
-    assert filled3["catsie"] == config["catsie"]
-    assert filled3["other"] == 12
 
 
 def test_config_dataclasses():

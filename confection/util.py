@@ -3,6 +3,9 @@ import sys
 from copy import deepcopy
 from typing import Any, Callable, Iterator, TypeVar
 
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import core_schema
+
 if sys.version_info < (3, 8):
     # Ignoring type for mypy to avoid "Incompatible import" error (https://github.com/python/mypy/issues/4427).
     from typing_extensions import Protocol  # type: ignore
@@ -41,14 +44,19 @@ class Generator(Iterator):
     """
 
     @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+    def __get_pydantic_core_schema__(
+        cls,
+        _source_type: Any,
+        _handler: GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        return core_schema.with_info_plain_validator_function(cls.__validate__)
 
     @classmethod
-    def validate(cls, v):
+    def __validate__(cls, v, info):
         if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
             raise TypeError("not a valid iterator")
-        return v
+        else:
+            return v
 
 
 DEFAULT_FROZEN_DICT_ERROR = (
@@ -141,3 +149,12 @@ class SimpleFrozenList(list):
 
     def __deepcopy__(self, memo):
         return self.__class__(deepcopy(v) for v in self)
+
+
+def is_promise(obj) -> bool:
+    if not hasattr(obj, "keys"):
+        return False
+    id_keys = [k for k in obj.keys() if k.startswith("@")]
+    if len(id_keys):
+        return True
+    return False
