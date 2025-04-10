@@ -2,7 +2,18 @@ import inspect
 import pickle
 import platform
 from types import GeneratorType
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union, Sequence, Literal
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    Sequence,
+    Literal,
+)
 
 import catalogue
 import pytest
@@ -234,39 +245,44 @@ def cats_var_args_optional(*args: str, foo: str = "hi"):
     return " ".join(args) + f"foo={foo}"
 
 
-
 @my_registry.cats("catsie.v777")
 def catsie_777(y: int = 1):
     return "meow" * y
 
 
-@pytest.mark.parametrize("cfg", [
-    """[a]\nb = 1\n* = ["foo","bar"]""",
-    """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
-])
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        """[a]\nb = 1\n* = ["foo","bar"]""",
+        """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
+    ],
+)
 def test_positional_args_round_trip(cfg: str):
     round_trip = Config().from_str(cfg).to_str()
     assert round_trip == cfg
 
 
-@pytest.mark.parametrize("cfg,expected", [
-    (
-        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
-        """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1"""
-    ),
-    (
-        """[a]\n@cats = "var_args_optional.v1"\n* = ["meow","bar"]""",
-        """[a]\n@cats = "var_args_optional.v1"\n* = ["meow","bar"]\nfoo = \"hi\""""
-    ),
-    (
-        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""",
-        """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\nx = 1"""
-    ),
-    (
-        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
-        """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1"""
-    )
-])
+@pytest.mark.parametrize(
+    "cfg,expected",
+    [
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
+            """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1""",
+        ),
+        (
+            """[a]\n@cats = "var_args_optional.v1"\n* = ["meow","bar"]""",
+            """[a]\n@cats = "var_args_optional.v1"\n* = ["meow","bar"]\nfoo = \"hi\"""",
+        ),
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""",
+            """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\nx = 1""",
+        ),
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
+            """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1""",
+        ),
+    ],
+)
 def test_positional_args_fill_round_trip(cfg, expected):
     config = Config().from_str(cfg)
     filled_dict = my_registry.fill(config)
@@ -274,20 +290,20 @@ def test_positional_args_fill_round_trip(cfg, expected):
     assert filled == expected
 
 
-@pytest.mark.parametrize("cfg,expected", [
-    (
-        """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
-        {"a": {"*": ({"test": 2}, {"test": 1}), "b": 1}}
-    ),
-    (
-        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""",
-        {"a": ({"x": 1},)}
-    ),
-    (
-        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 3""",
-        {"a": ("meowmeowmeow",)}
-    )
-])
+@pytest.mark.parametrize(
+    "cfg,expected",
+    [
+        (
+            """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
+            {"a": {"*": ({"test": 2}, {"test": 1}), "b": 1}},
+        ),
+        ("""[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""", {"a": ({"x": 1},)}),
+        (
+            """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 3""",
+            {"a": ("meowmeowmeow",)},
+        ),
+    ],
+)
 def test_positional_args_resolve_round_trip(cfg, expected):
     resolved = my_registry.resolve(Config().from_str(cfg))
     assert resolved == expected

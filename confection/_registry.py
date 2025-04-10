@@ -10,7 +10,7 @@ from typing import (
     TypeVar,
     Generic,
     Callable,
-    Literal
+    Literal,
 )
 import json
 import catalogue
@@ -20,12 +20,17 @@ from pydantic import BaseModel, ValidationError, ConfigDict, create_model, Field
 from pydantic.fields import FieldInfo
 import copy
 from ._errors import ConfigValidationError
-from ._config import Config, ARGS_FIELD, ARGS_FIELD_ALIAS, RESERVED_FIELDS, RESERVED_FIELDS_REVERSE
+from ._config import (
+    Config,
+    ARGS_FIELD,
+    ARGS_FIELD_ALIAS,
+    RESERVED_FIELDS,
+    RESERVED_FIELDS_REVERSE,
+)
 from .util import is_promise
 
 
 _PromisedType = TypeVar("_PromisedType")
-
 
 
 class EmptySchema(BaseModel):
@@ -57,7 +62,6 @@ class Promise(Generic[_PromisedType]):
             _ = self.schema.model_validate(kwargs)
         except ValidationError as e:
             raise ConfigValidationError(config=kwargs, errors=e.errors()) from None
- 
 
     def resolve(self, validate: bool = True) -> Any:
         if isinstance(self.getter, catalogue.RegistryError):
@@ -97,7 +101,7 @@ class Promise(Generic[_PromisedType]):
             getter=getter,
             schema=schema,
         )
-        #if validate:
+        # if validate:
         #    output.validate()
         return output
 
@@ -142,7 +146,13 @@ class registry:
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
-        config = cls.fill(config, schema=schema, overrides=overrides, validate=validate, interpolate=True)
+        config = cls.fill(
+            config,
+            schema=schema,
+            overrides=overrides,
+            validate=validate,
+            interpolate=True,
+        )
         promised = insert_promises(cls, config, resolve=True, validate=True)
         resolved = resolve_promises(promised, validate=validate)
         fixed = fix_positionals(resolved)
@@ -159,7 +169,7 @@ class registry:
         schema: Type[BaseModel] = EmptySchema,
         overrides: Dict[str, Any] = {},
         validate: bool = True,
-        interpolate: bool=False
+        interpolate: bool = False,
     ) -> Config:
         if cls.is_promise(config):
             err_msg = "The top-level config object can't be a reference to a registered function."
@@ -171,7 +181,9 @@ class registry:
         orig_config = config
         if not is_interpolated:
             config = Config(orig_config).interpolate()
-        filled = fill_config(cls, config, schema=schema, overrides=overrides, validate=validate)
+        filled = fill_config(
+            cls, config, schema=schema, overrides=overrides, validate=validate
+        )
         if validate:
             full_schema = cls._make_unresolved_schema(schema, filled)
             try:
@@ -233,7 +245,9 @@ class registry:
         return make_func_schema(func)
 
     @classmethod
-    def _make_unresolved_schema(cls, schema: Type[BaseModel], config) -> Type[BaseModel]:
+    def _make_unresolved_schema(
+        cls, schema: Type[BaseModel], config
+    ) -> Type[BaseModel]:
         """Make a single schema to validate against, representing data with promises unresolved.
 
         When the config provides a value via a promise, we build a schema for the arguments for the
@@ -247,21 +261,28 @@ class registry:
             if name not in config:
                 fields[name] = (field.annotation, Field(field.default))
             elif is_promise(config[name]):
-                fields[name] = (cls._make_unresolved_promise_schema(config[name]), Field(field.default))
+                fields[name] = (
+                    cls._make_unresolved_promise_schema(config[name]),
+                    Field(field.default),
+                )
             elif field.annotation is None:
                 fields[name] = (Any, Field(field.default))
             elif issubclass(field.annotation, BaseModel):
-                fields[name] = cls._make_unresolved_schema(field.annotation, config[name])
+                fields[name] = cls._make_unresolved_schema(
+                    field.annotation, config[name]
+                )
             elif isinstance(config[name], dict):
-                fields[name] = cls._make_unresolved_schema(_make_dummy_schema(config[name]), config)
+                fields[name] = cls._make_unresolved_schema(
+                    _make_dummy_schema(config[name]), config
+                )
             else:
                 fields[name] = (field.annotation, Field(...))
-        return create_model("UnresolvedConfig", __config__={"extra": "forbid"}, **fields)
+        return create_model(
+            "UnresolvedConfig", __config__={"extra": "forbid"}, **fields
+        )
 
     @classmethod
-    def _make_unresolved_promise_schema(
-        cls, obj: Dict[str, Any]
-    ) -> Type[BaseModel]:
+    def _make_unresolved_promise_schema(cls, obj: Dict[str, Any]) -> Type[BaseModel]:
         """Create a schema for a promise dict (referencing a registry function)
         by inspecting the function signature.
         """
@@ -277,19 +298,33 @@ class registry:
             fields[ARGS_FIELD_ALIAS] = (Dict, fields[ARGS_FIELD_ALIAS][1])
         for name, (field_type, field_info) in list(fields.items()):
             if name in obj and is_promise(obj[name]):
-                fields[name] = (cls._make_unresolved_promise_schema(obj[name]), Field(field_info.default))
+                fields[name] = (
+                    cls._make_unresolved_promise_schema(obj[name]),
+                    Field(field_info.default),
+                )
             elif name in obj and isinstance(obj[name], dict):
-                fields[name] = (cls._make_unresolved_schema(EmptySchema, obj[name]), Field(field_info.default))
+                fields[name] = (
+                    cls._make_unresolved_schema(EmptySchema, obj[name]),
+                    Field(field_info.default),
+                )
         fields[f"@{reg_name}"] = (str, Field(...))
-        model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
-        return create_model(f"{reg_name} {func_name} model", __config__=model_config, **fields) # type: ignore
+        model_config = {
+            "extra": "forbid",
+            "arbitrary_types_allowed": True,
+            "alias_generator": alias_generator,
+        }
+        return create_model(f"{reg_name} {func_name} model", __config__=model_config, **fields)  # type: ignore
 
 
 def _make_dummy_schema(config):
     fields = {}
     for name, value in config.items():
         fields[name] = (Any, Field(...))
-    model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
+    model_config = {
+        "extra": "forbid",
+        "arbitrary_types_allowed": True,
+        "alias_generator": alias_generator,
+    }
     return create_model("DummyModel", __config__=model_config, **fields)
 
 
@@ -453,8 +488,12 @@ def apply_overrides(
 
 def make_func_schema(func) -> Type[BaseModel]:
     fields = get_func_fields(func)
-    model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
-    return create_model("ArgModel", __config__=model_config, **fields) # type: ignore
+    model_config = {
+        "extra": "forbid",
+        "arbitrary_types_allowed": True,
+        "alias_generator": alias_generator,
+    }
+    return create_model("ArgModel", __config__=model_config, **fields)  # type: ignore
 
 
 def get_func_fields(func) -> Dict[str, Tuple[Type, FieldInfo]]:

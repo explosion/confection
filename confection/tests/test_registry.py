@@ -111,7 +111,7 @@ def cat_generic(cat: Cat[int, int]) -> Cat[int, int]:
 
 
 @my_registry.cats("var_args_optional_untyped.v1")
-def cats_var_args_optional_untyped(*args: str, meow: bool=False):
+def cats_var_args_optional_untyped(*args: str, meow: bool = False):
     return args
 
 
@@ -157,7 +157,11 @@ def cats_var_args_optional_untyped(*args: str, meow: bool=False):
                 "level2_opt": {"required": 1, "optional": "default value"},
             },
         ),
-        ({"str1": "1", "str2": {"@cats": "var_str_args.v1", "*": ["a1", "a2"]}}, StrsSchema, "unchanged"),
+        (
+            {"str1": "1", "str2": {"@cats": "var_str_args.v1", "*": ["a1", "a2"]}},
+            StrsSchema,
+            "unchanged",
+        ),
     ],
 )
 def test_fill_from_schema(config, schema, expected):
@@ -200,30 +204,53 @@ def test_fill_from_schema(config, schema, expected):
             {"required": {"@cats": "optional_str_arg.v1", "hi": "default value"}},
         ),
         (
-            {"required": {"@cats": "dict_arg.v1", "schedules": {"rate": {"@cats": "no_args.v1"}}}},
-            "unchanged"
+            {
+                "required": {
+                    "@cats": "dict_arg.v1",
+                    "schedules": {"rate": {"@cats": "no_args.v1"}},
+                }
+            },
+            "unchanged",
         ),
         (
-            {'a': {'@cats': 'var_args.v1', '*': {'foo': {'@cats': 'no_args.v1'}}}},
-            "unchanged"
+            {"a": {"@cats": "var_args.v1", "*": {"foo": {"@cats": "no_args.v1"}}}},
+            "unchanged",
         ),
         (
-            {'a': {'@cats': 'var_args_optional.v1', '*': ["meow", "bar"]}},
-            {'a': {'@cats': 'var_args_optional.v1', "foo": "hi", '*': ["meow", "bar"]}},
+            {"a": {"@cats": "var_args_optional.v1", "*": ["meow", "bar"]}},
+            {"a": {"@cats": "var_args_optional.v1", "foo": "hi", "*": ["meow", "bar"]}},
         ),
         (
-            {'a': {'@cats': 'var_args_optional.v1', '*': ["bar"]}},
-            {'a': {'@cats': 'var_args_optional.v1', "foo": "hi", '*': ["bar"]}},
+            {"a": {"@cats": "var_args_optional.v1", "*": ["bar"]}},
+            {"a": {"@cats": "var_args_optional.v1", "foo": "hi", "*": ["bar"]}},
         ),
         (
-            {'a': {'@cats': 'var_args_optional_untyped.v1', '*': ["bar"]}},
-            {'a': {'@cats': 'var_args_optional_untyped.v1', "meow": False, '*': ["bar"]}},
+            {"a": {"@cats": "var_args_optional_untyped.v1", "*": ["bar"]}},
+            {
+                "a": {
+                    "@cats": "var_args_optional_untyped.v1",
+                    "meow": False,
+                    "*": ["bar"],
+                }
+            },
         ),
         (
-            {'a': {'@cats': 'var_args_optional_untyped.v1', '*': {"foo": {"@cats": "optional_str_arg.v1"}}}},
-            {'a': {'@cats': 'var_args_optional_untyped.v1', "meow": False, '*': {"foo": {"@cats": "optional_str_arg.v1", "hi": "default value"}}}}
+            {
+                "a": {
+                    "@cats": "var_args_optional_untyped.v1",
+                    "*": {"foo": {"@cats": "optional_str_arg.v1"}},
+                }
+            },
+            {
+                "a": {
+                    "@cats": "var_args_optional_untyped.v1",
+                    "meow": False,
+                    "*": {
+                        "foo": {"@cats": "optional_str_arg.v1", "hi": "default value"}
+                    },
+                }
+            },
         ),
-
     ],
 )
 def test_fill_from_promises(config, expected):
@@ -296,8 +323,8 @@ def test_fill_from_both(config, schema, expected):
             {"required": "nested"},
         ),
         (
-            {'a': {"hi": True, '*': {"foo": {"@cats": "no_args.v1"}}}},
-            {'a': {"hi": True, '*': ("(empty)",)}},
+            {"a": {"hi": True, "*": {"foo": {"@cats": "no_args.v1"}}}},
+            {"a": {"hi": True, "*": ("(empty)",)}},
         ),
     ],
 )
@@ -501,7 +528,9 @@ def test_resolve_schema():
         model_config = {"extra": "forbid"}
 
     config = {"one": 1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
-    my_registry.resolve({"three": {"@cats": "catsie.v1", "evil": True}}, schema=TestBaseSubSchema)
+    my_registry.resolve(
+        {"three": {"@cats": "catsie.v1", "evil": True}}, schema=TestBaseSubSchema
+    )
     config = {"one": -1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
     with pytest.raises(ConfigValidationError):
         # "one" is not a positive int
@@ -687,10 +716,21 @@ def optimizer2(schedules: Dict[str, Generator]) -> Generator:
     return schedules["rate"]
 
 
-@pytest.mark.parametrize("config,expected", [
-    ({"test": {"@schedules": "schedule.v1"}}, "unchanged"),
-    ({"test": {"@optimizers": "optimizer2.v1", "schedules": {"rate": {"@schedules": "schedule.v1"}}}}, "unchanged")
-])
+@pytest.mark.parametrize(
+    "config,expected",
+    [
+        ({"test": {"@schedules": "schedule.v1"}}, "unchanged"),
+        (
+            {
+                "test": {
+                    "@optimizers": "optimizer2.v1",
+                    "schedules": {"rate": {"@schedules": "schedule.v1"}},
+                }
+            },
+            "unchanged",
+        ),
+    ],
+)
 def test_fill_validate_generator(config, expected):
     result = my_registry.fill(config, validate=True)
     if expected == "unchanged":
@@ -700,11 +740,30 @@ def test_fill_validate_generator(config, expected):
         assert result == expected
 
 
-@pytest.mark.parametrize("config,paths", [
-    ({"test": {"@schedules": "schedule.v1"}}, [("test",)]),
-    ({"test": {"@optimizers": "optimizer.v1", "rate": {"@schedules": "schedule.v1"}}}, [("test",)]),
-    ({"test": {"@optimizers": "optimizer2.v1", "schedules": {"rate": {"@schedules": "schedule.v1"}}}}, [("test",)])
-])
+@pytest.mark.parametrize(
+    "config,paths",
+    [
+        ({"test": {"@schedules": "schedule.v1"}}, [("test",)]),
+        (
+            {
+                "test": {
+                    "@optimizers": "optimizer.v1",
+                    "rate": {"@schedules": "schedule.v1"},
+                }
+            },
+            [("test",)],
+        ),
+        (
+            {
+                "test": {
+                    "@optimizers": "optimizer2.v1",
+                    "schedules": {"rate": {"@schedules": "schedule.v1"}},
+                }
+            },
+            [("test",)],
+        ),
+    ],
+)
 def test_resolve_validate_generator(config, paths):
     result = my_registry.resolve(config, validate=True)
     for path in paths:
@@ -746,22 +805,32 @@ def test_fill_config_dict_return_type():
 def catsie_with_alias(validate: StrictBool = False):
     return validate
 
+
 @my_registry.cats("catsie.with_model_alias")
 def catsie_with_model_alias(model_config: str = "default"):
     return model_config
 
 
-@pytest.mark.parametrize("config,filled,resolved", [
-    (
-        {"test": {"@cats": "catsie.with_alias", "validate": True}}, "unchanged", {"test": True}
-    ),
-    (
-        {"test": {"@cats": "catsie.with_model_alias", "model_config": "hi"}}, "unchanged", {"test": "hi"}
-    ),
-    (
-        {"test": {"@cats": "catsie.with_model_alias"}}, {"test": {"@cats": "catsie.with_model_alias", "model_config": "default"}}, {"test": "default"}
-    ),
-])
+@pytest.mark.parametrize(
+    "config,filled,resolved",
+    [
+        (
+            {"test": {"@cats": "catsie.with_alias", "validate": True}},
+            "unchanged",
+            {"test": True},
+        ),
+        (
+            {"test": {"@cats": "catsie.with_model_alias", "model_config": "hi"}},
+            "unchanged",
+            {"test": "hi"},
+        ),
+        (
+            {"test": {"@cats": "catsie.with_model_alias"}},
+            {"test": {"@cats": "catsie.with_model_alias", "model_config": "default"}},
+            {"test": "default"},
+        ),
+    ],
+)
 def test_reserved_aliases(config, filled, resolved):
     """Test that the auto-generated pydantic schemas auto-alias reserved
     attributes like "validate" that would otherwise cause NameError."""
@@ -794,7 +863,10 @@ def test_config_validation_error_custom():
     assert e1.show_config is True
     assert len(e1.errors) == 1
     assert e1.errors[0]["loc"] == ("world",)
-    assert e1.errors[0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
+    assert (
+        e1.errors[0]["msg"]
+        == "Input should be a valid integer, unable to parse string as an integer"
+    )
     assert e1.errors[0]["type"] == "int_parsing"
     assert e1.error_types == set(["int_parsing"])
     # Create a new error with overrides
