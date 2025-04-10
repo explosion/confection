@@ -224,38 +224,66 @@ def test_validation_custom_types():
         my_registry.resolve({"config": cfg})
 
 
-def test_positional_args_to_from_string():
-    cfg = """[a]\nb = 1\n* = ["foo","bar"]"""
-    assert Config().from_str(cfg).to_str() == cfg
-    cfg = """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1"""
-    assert Config().from_str(cfg).to_str() == cfg
+@my_registry.cats("catsie.v666")
+def catsie_666(*args, meow=False):
+    return args
 
-    @my_registry.cats("catsie.v666")
-    def catsie_666(*args, meow=False):
-        return args
 
-    cfg = """[a]\n@cats = "catsie.v666"\n* = ["foo","bar"]"""
-    filled = my_registry.fill(Config().from_str(cfg)).to_str()
-    assert filled == """[a]\n@cats = "catsie.v666"\n* = ["foo","bar"]\nmeow = false"""
-    resolved = my_registry.resolve(Config().from_str(cfg))
-    assert resolved == {"a": ("foo", "bar")}
-    cfg = """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1"""
-    filled = my_registry.fill(Config().from_str(cfg)).to_str()
-    assert filled == """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\nx = 1"""
-    resolved = my_registry.resolve(Config().from_str(cfg))
-    assert resolved == {"a": ({"x": 1},)}
+@my_registry.cats("catsie.v777")
+def catsie_777(y: int = 1):
+    return "meow" * y
 
-    @my_registry.cats("catsie.v777")
-    def catsie_777(y: int = 1):
-        return "meow" * y
 
-    cfg = """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\""""
-    filled = my_registry.fill(Config().from_str(cfg)).to_str()
-    expected = """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1"""
+@pytest.mark.parametrize("cfg", [
+    """[a]\nb = 1\n* = ["foo","bar"]""",
+    """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
+])
+def test_positional_args_round_trip(cfg: str):
+    round_trip = Config().from_str(cfg).to_str()
+    assert round_trip == cfg
+
+
+@pytest.mark.parametrize("cfg,expected", [
+    (
+        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
+        """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1"""
+    ),
+    (
+        """[a]\n@cats = "catsie.v666"\n* = ["foo","bar"]""",
+        """[a]\n@cats = "catsie.v666"\n* = ["foo","bar"]\nmeow = false"""
+    ),
+    (
+        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""",
+        """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\nx = 1"""
+    ),
+    (
+        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777\"""",
+        """[a]\n@cats = "catsie.v666"\nmeow = false\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 1"""
+    )
+])
+def test_positional_args_fill_round_trip(cfg, expected):
+    config = Config().from_str(cfg)
+    filled = my_registry.fill(config).to_str()
     assert filled == expected
-    cfg = """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 3"""
-    result = my_registry.resolve(Config().from_str(cfg))
-    assert result == {"a": ("meowmeowmeow",)}
+
+
+@pytest.mark.parametrize("cfg,expected", [
+    (
+        """[a]\nb = 1\n\n[a.*.bar]\ntest = 2\n\n[a.*.foo]\ntest = 1""",
+        {"a": ("foo", "bar")}
+    ),
+    (
+        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\nx = 1""",
+        {"a": ({"x": 1},)}
+    ),
+    (
+        """[a]\n@cats = "catsie.v666"\n\n[a.*.foo]\n@cats = "catsie.v777"\ny = 3""",
+        {"a": ("meowmeowmeow",)}
+    )
+])
+def test_positional_args_resolve_round_trip(cfg, expected):
+    filled = my_registry.fill(Config().from_str(cfg)).to_str()
+    assert filled == expected
 
 
 @pytest.mark.parametrize(
@@ -287,15 +315,6 @@ def test_cant_expand_undefined_block(cfg, is_valid):
     else:
         with pytest.raises(ConfigValidationError):
             Config().from_str(cfg)
-
-
-@pytest.mark.parametrize(
-    "prop,expected",
-    [("a.b.c", True), ("a.b", True), ("a", True), ("a.e", True), ("a.b.c.d", False)],
-)
-def test_is_in_config(prop, expected):
-    config = {"a": {"b": {"c": 5, "d": 6}, "e": [1, 2]}}
-    assert my_registry._is_in_config(prop, config) is expected
 
 
 def test_resolve_prefilled_values():

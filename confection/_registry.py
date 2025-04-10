@@ -266,6 +266,11 @@ class registry:
             return EmptySchema
         func = cls.get(reg_name, func_name)
         fields = get_func_fields(func)
+        if ARGS_FIELD_ALIAS in fields and isinstance(obj.get(ARGS_FIELD), dict):
+            # You're allowed to provide variable args as a dict or a list.
+            # It's a dict if the values are sections, like 'items.*.fork',
+            # and a list if it's like items = ['fork']
+            fields[ARGS_FIELD_ALIAS] = (Dict, fields[ARGS_FIELD_ALIAS][1])
         for name, (field_type, field_info) in list(fields.items()):
             if name in obj and is_promise(obj[name]):
                 fields[name] = (cls._make_unresolved_promise_schema(obj[name]), Field(field_info.default))

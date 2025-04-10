@@ -198,7 +198,10 @@ def test_fill_from_schema(config, schema, expected):
             {"required": {"@cats": "dict_arg.v1", "schedules": {"rate": {"@cats": "no_args.v1"}}}},
             "unchanged"
         ),
-
+        (
+            {'a': {'@cats': 'var_args.v1', '*': {'foo': {'@cats': 'no_args.v1'}}}},
+            "unchanged"
+        )
     ],
 )
 def test_fill_from_promises(config, expected):
