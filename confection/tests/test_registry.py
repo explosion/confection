@@ -318,7 +318,6 @@ def test_fill_allow_invalid(config, schema, expected):
         assert filled == expected
 
 
-@pytest.mark.xfail
 @pytest.mark.parametrize(
     "config,schema",
     [
@@ -461,28 +460,27 @@ def test_registry_methods():
 def test_resolve_schema():
     class TestBaseSubSchema(BaseModel):
         three: str
+        model_config = {"extra": "forbid"}
 
     class TestBaseSchema(BaseModel):
         one: PositiveInt
         two: TestBaseSubSchema
-        
         model_config = {"extra": "forbid"}
 
     class TestSchema(BaseModel):
         cfg: TestBaseSchema
+        model_config = {"extra": "forbid"}
 
     config = {"one": 1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
     my_registry.resolve({"three": {"@cats": "catsie.v1", "evil": True}}, schema=TestBaseSubSchema)
-    my_registry.resolve({"one": 1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}, schema=TestBaseSchema)
-    #my_registry.resolve({"cfg": config}, schema=TestSchema)
-    #config = {"one": -1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
-    #with pytest.raises(ConfigValidationError):
-    #    # "one" is not a positive int
-    #    my_registry.resolve({"cfg": config}, schema=TestSchema)
-    #config = {"one": 1, "two": {"four": {"@cats": "catsie.v1", "evil": True}}}
-    #with pytest.raises(ConfigValidationError):
-    #    # "three" is required in subschema
-    #    my_registry.resolve({"cfg": config}, schema=TestSchema)
+    config = {"one": -1, "two": {"three": {"@cats": "catsie.v1", "evil": True}}}
+    with pytest.raises(ConfigValidationError):
+        # "one" is not a positive int
+        my_registry.resolve({"cfg": config}, schema=TestSchema)
+    config = {"one": 1, "two": {"four": {"@cats": "catsie.v1", "evil": True}}}
+    with pytest.raises(ConfigValidationError):
+        # "three" is required in subschema
+        my_registry.resolve({"cfg": config}, schema=TestSchema)
 
 
 def test_make_config_positional_args():
@@ -685,22 +683,6 @@ def test_resolve_validate_generator(config, paths):
         for x in path:
             node = node[x]
         assert isinstance(node, GeneratorType)
- 
-    #assert isinstance(result, GeneratorType)
-
-    #result = my_registry.resolve({"test": cfg})["test"]
-    #assert isinstance(result, GeneratorType)
-
-    #cfg = {
-    #    "@optimizers": "test_optimizer.v3",
-    #    "schedules": {"rate": {"@schedules": "test_schedule.v2"}},
-    #}
-    #result = my_registry.resolve({"test": cfg})["test"]
-    #assert isinstance(result, GeneratorType)
-
-    #@my_registry.optimizers("test_optimizer.v4")
-    #def test_optimizer4(*schedules: Generator) -> Generator:
-    #    return schedules[0]
 
 
 def test_handle_generic_type():
@@ -709,7 +691,6 @@ def test_handle_generic_type():
 
     cfg = {"@cats": "generic_cat.v1", "cat": {"@cats": "int_cat.v1", "value_in": 3}}
     output = my_registry.resolve({"test": cfg})
-    print(output)
     cat = output["test"]
     assert isinstance(cat, Cat)
     assert cat.value_in == 3
@@ -824,6 +805,3 @@ def test_config_fill_without_resolve():
     filled3 = my_registry.fill(config, schema=BaseSchema2)
     assert filled3["catsie"] == config["catsie"]
     assert filled3["other"] == 12
-
-
-
