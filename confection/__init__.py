@@ -54,9 +54,7 @@ def copy_model_field(field: ModelField, type_: Any) -> ModelField:
 
 
 class EmptySchema(BaseModel):
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
+    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
 
 __all__ = [

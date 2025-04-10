@@ -166,10 +166,9 @@ class registry:
         orig_config = config
         if not is_interpolated:
             config = Config(orig_config).interpolate()
-        filled = fill_config(cls, config, schema=schema, overrides=overrides)
+        filled = fill_config(cls, config, schema=schema, overrides=overrides, validate=validate)
         if validate:
             full_schema = cls._make_unresolved_schema(schema, filled)
-            print(json.dumps(full_schema.model_json_schema(), indent=2))
             try:
                 _ = full_schema.model_validate(filled)
             except ValidationError as e:
@@ -248,7 +247,7 @@ class registry:
             elif issubclass(field.annotation, BaseModel):
                 fields[name] = cls._make_unresolved_schema(field.annotation, config[name])
             elif isinstance(config[name], dict):
-                fields[name] = cls._make_unresolved_schema(_make_dummy_schema(config), config)
+                fields[name] = cls._make_unresolved_schema(_make_dummy_schema(config[name]), config)
             else:
                 fields[name] = (field.annotation, Field(...))
         return create_model("UnresolvedConfig", __config__={"extra": "forbid"}, **fields)
@@ -279,7 +278,6 @@ def _make_dummy_schema(config):
     fields = {}
     for name, value in config.items():
         fields[name] = (Any, Field(...))
-
     model_config = {"extra": "forbid", "arbitrary_types_allowed": True, "alias_generator": alias_generator}
     return create_model("DummyModel", __config__=model_config, **fields)
 
