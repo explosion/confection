@@ -36,6 +36,7 @@ ARGS_FIELD_ALIAS = "VARIABLE_POSITIONAL_ARGS"
 # Aliases for fields that would otherwise shadow pydantic attributes. Can be any
 # string, so we're using name + space so it looks the same in error messages etc.
 RESERVED_FIELDS = {"validate": "validate\u0020"}
+RESERVED_FIELDS_REVERSE = {v: k for k, v in RESERVED_FIELDS.items()}
 # Internal prefix used to mark section references for custom interpolation
 SECTION_PREFIX = "__SECTION__:"
 # Values that shouldn't be loaded during interpolation because it'd cause

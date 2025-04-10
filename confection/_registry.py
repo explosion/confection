@@ -20,11 +20,12 @@ from pydantic import BaseModel, ValidationError, ConfigDict, create_model, Field
 from pydantic.fields import FieldInfo
 import copy
 from ._errors import ConfigValidationError
-from ._config import Config, ARGS_FIELD, ARGS_FIELD_ALIAS
+from ._config import Config, ARGS_FIELD, ARGS_FIELD_ALIAS, RESERVED_FIELDS, RESERVED_FIELDS_REVERSE
 from .util import is_promise
 
 
 _PromisedType = TypeVar("_PromisedType")
+
 
 
 class EmptySchema(BaseModel):
@@ -226,6 +227,7 @@ class registry:
             return EmptySchema
         func = cls.get(reg_name, func_name)
         return make_func_schema(func)
+
     @classmethod
     def _make_unresolved_schema(cls, schema: Type[BaseModel], config) -> Type[BaseModel]:
         """Make a single schema to validate against, representing data with promises unresolved.
@@ -288,7 +290,7 @@ def alias_generator(name: str) -> str:
     if name == ARGS_FIELD_ALIAS:
         return ARGS_FIELD
     # Auto-alias fields that shadow base model attributes
-    return name
+    return RESERVED_FIELDS_REVERSE.get(name, name)
 
 
 def fill_config(
@@ -449,7 +451,8 @@ def get_func_fields(func) -> Dict[str, Tuple[Type, FieldInfo]]:
             spread_annot = Sequence[annotation]  # type: ignore
             sig_args[ARGS_FIELD_ALIAS] = (spread_annot, Field(default))
         else:
-            sig_args[param.name] = (annotation, Field(default))
+            name = RESERVED_FIELDS.get(param.name, param.name)
+            sig_args[name] = (annotation, Field(default))
     return sig_args
 
 
