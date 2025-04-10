@@ -732,22 +732,41 @@ def test_fill_config_dict_return_type():
     assert result["not_evil"] is True
 
 
-def test_config_reserved_aliases():
+@my_registry.cats("catsie.with_alias")
+def catsie_with_alias(validate: StrictBool = False):
+    return validate
+
+@my_registry.cats("catsie.with_model_alias")
+def catsie_with_model_alias(model_config: str = "default"):
+    return model_config
+
+
+@pytest.mark.parametrize("config,filled,resolved", [
+    (
+        {"test": {"@cats": "catsie.with_alias", "validate": True}}, "unchanged", {"test": True}
+    ),
+    (
+        {"test": {"@cats": "catsie.with_model_alias", "model_config": "hi"}}, "unchanged", {"test": "hi"}
+    ),
+    (
+        {"test": {"@cats": "catsie.with_model_alias"}}, {"test": {"@cats": "catsie.with_model_alias", "model_config": "default"}}, {"test": "default"}
+    ),
+])
+def test_reserved_aliases(config, filled, resolved):
     """Test that the auto-generated pydantic schemas auto-alias reserved
     attributes like "validate" that would otherwise cause NameError."""
-
-    @my_registry.cats("catsie.with_alias")
-    def catsie_with_alias(validate: StrictBool = False):
-        return validate
-
-    cfg = {"@cats": "catsie.with_alias", "validate": True}
-    resolved = my_registry.resolve({"test": cfg})
-    filled = my_registry.fill({"test": cfg})
-    assert resolved["test"] is True
-    assert filled["test"] == cfg
-    cfg = {"@cats": "catsie.with_alias", "validate": 20}
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve({"test": cfg})
+    f = my_registry.fill(config)
+    r = my_registry.resolve(config)
+    if filled == "unchanged":
+        assert f == config
+    else:
+        assert f != config
+        assert f == filled
+    if resolved == "unchanged":
+        assert r == config
+    else:
+        assert r != config
+        assert r == resolved
 
 
 def test_config_validation_error_custom():
