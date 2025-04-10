@@ -110,6 +110,11 @@ def cat_generic(cat: Cat[int, int]) -> Cat[int, int]:
     return cat
 
 
+@my_registry.cats("var_args_optional_untyped.v1")
+def cats_var_args_optional_untyped(*args: str, meow: bool=False):
+    return args
+
+
 @pytest.mark.parametrize(
     "config,schema,expected",
     [
@@ -201,7 +206,24 @@ def test_fill_from_schema(config, schema, expected):
         (
             {'a': {'@cats': 'var_args.v1', '*': {'foo': {'@cats': 'no_args.v1'}}}},
             "unchanged"
-        )
+        ),
+        (
+            {'a': {'@cats': 'var_args_optional.v1', '*': ["meow", "bar"]}},
+            {'a': {'@cats': 'var_args_optional.v1', "foo": "hi", '*': ["meow", "bar"]}},
+        ),
+        (
+            {'a': {'@cats': 'var_args_optional.v1', '*': ["bar"]}},
+            {'a': {'@cats': 'var_args_optional.v1', "foo": "hi", '*': ["bar"]}},
+        ),
+        (
+            {'a': {'@cats': 'var_args_optional_untyped.v1', '*': ["bar"]}},
+            {'a': {'@cats': 'var_args_optional_untyped.v1', "meow": False, '*': ["bar"]}},
+        ),
+        (
+            {'a': {'@cats': 'var_args_optional_untyped.v1', '*': {"foo": {"@cats": "optional_str_arg.v1"}}}},
+            {'a': {'@cats': 'var_args_optional_untyped.v1', "meow": False, '*': {"foo": {"@cats": "optional_str_arg.v1", "hi": "default value"}}}}
+        ),
+
     ],
 )
 def test_fill_from_promises(config, expected):
@@ -272,6 +294,10 @@ def test_fill_from_both(config, schema, expected):
                 }
             },
             {"required": "nested"},
+        ),
+        (
+            {'a': {"hi": True, '*': {"foo": {"@cats": "no_args.v1"}}}},
+            {'a': {"hi": True, '*': ("(empty)",)}},
         ),
     ],
 )

@@ -54,10 +54,8 @@ class Generator(Iterator):
     @classmethod
     def __validate__(cls, v, info):
         if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
-            print("V", v, info)
             raise TypeError("not a valid iterator")
         else:
-            print("generator", v, info)
             return v
 
 

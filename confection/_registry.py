@@ -64,6 +64,7 @@ class Promise(Generic[_PromisedType]):
             raise self.getter
         kwargs = _recursive_resolve(self.kwargs, validate=validate)
         args = _recursive_resolve(self.var_args, validate=validate)
+        args = list(args.values()) if isinstance(args, dict) else args
         if validate:
             schema_args = dict(kwargs)
             if args:
@@ -141,12 +142,14 @@ class registry:
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
-        config = cls.fill(config, schema=schema, overrides=overrides, validate=validate)
+        config = cls.fill(config, schema=schema, overrides=overrides, validate=validate, interpolate=True)
         promised = insert_promises(cls, config, resolve=True, validate=True)
         resolved = resolve_promises(promised, validate=validate)
+        fixed = fix_positionals(resolved)
+        assert isinstance(fixed, dict)
         if validate:
-            validate_resolved(resolved, schema)
-        return resolved
+            validate_resolved(fixed, schema)
+        return fixed
 
     @classmethod
     def fill(
@@ -156,6 +159,7 @@ class registry:
         schema: Type[BaseModel] = EmptySchema,
         overrides: Dict[str, Any] = {},
         validate: bool = True,
+        interpolate: bool=False
     ) -> Config:
         if cls.is_promise(config):
             err_msg = "The top-level config object can't be a reference to a registered function."
@@ -179,7 +183,7 @@ class registry:
         # with a config that wasn't interpolated. Here, we prefer variables to
         # allow auto-filling a non-interpolated config without destroying
         # variable references.
-        if not is_interpolated:
+        if not interpolate and not is_interpolated:
             filled = filled.merge(
                 Config(orig_config, is_interpolated=False), remove_extra=True
             )
@@ -313,17 +317,6 @@ def fill_config(
     return defaulted
 
 
-def validate_unresolved(registry, config, schema):
-    #promised = insert_promises(registry, config, resolve=False, validate=True)
-    schema = make_schema(schema, config)
-    #schema = allow_promises(promised, schema)
-    #try:
-    #    _ = schema.model_validate(promised)
-    #except ValidationError as e:
-    #    raise ConfigValidationError(config=config, errors=e.errors()) from None
-    #return promised
-
-
 def validate_resolved(config, schema: Type[BaseModel]):
     # If value is a generator we can't validate type without
     # consuming it (which doesn't work if it's infinite – see
@@ -342,7 +335,7 @@ def fill_defaults(
     for name, field in schema.model_fields.items():
         # Account for the alias on variable positional args
         alias = field.alias if field.alias is not None else name
-        if alias not in config and field.default:
+        if alias not in config and field.default != Ellipsis:
             if isinstance(field.default, BaseModel):
                 output[alias] = field.default.model_dump()
             else:
@@ -413,6 +406,27 @@ def resolve_promises(
         else:
             output[key] = value
     return output
+
+
+def fix_positionals(config):
+    """Ensure positionals are provided as a tuple, rather than a dict."""
+    if isinstance(config, dict):
+        output = {}
+        for key, value in config.items():
+            if key == ARGS_FIELD and isinstance(value, dict):
+                value = tuple(value.values())
+            if isinstance(value, dict):
+                value = fix_positionals(value)
+            elif isinstance(value, list) or isinstance(value, tuple):
+                value = fix_positionals(value)
+            output[key] = value
+        return output
+    elif isinstance(config, list):
+        return [fix_positionals(v) for v in config]
+    elif isinstance(config, tuple):
+        return tuple([fix_positionals(v) for v in config])
+    else:
+        return config
 
 
 def apply_overrides(
