@@ -17,7 +17,7 @@ from ._config import (
     try_load_json,
 )
 from ._errors import ConfigValidationError
-from ._registry import registry
+from ._registry import registry, Promise
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 
 
