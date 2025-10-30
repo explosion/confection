@@ -54,6 +54,7 @@ class EmptySchema(BaseModel):
 
 __all__ = [
     "Config",
+    "Promise",
     "registry",
     "ConfigValidationError",
     "SimpleFrozenDict",
