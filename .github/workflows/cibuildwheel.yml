@@ -10,6 +10,9 @@ on:
 jobs:
   build_wheels:
     uses: explosion/gha-cibuildwheel/.github/workflows/cibuildwheel.yml@main
+    permissions:
+      contents: write
+      actions: read
     with:
       pure-python: true
     secrets:
