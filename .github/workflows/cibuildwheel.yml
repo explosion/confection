@@ -9,7 +9,7 @@ on:
       - 'prerelease-v[0-9]+.[0-9]+.[0-9]+**'
 jobs:
   build_wheels:
-    uses: explosion/gha-cibuildwheel/cibuildwheel.yml@main
+    uses: explosion/gha-cibuildwheel/.github/workflows/cibuildwheel.yml@main
     with:
       pure-python: true
     secrets:

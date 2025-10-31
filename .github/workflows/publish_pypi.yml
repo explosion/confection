@@ -10,6 +10,6 @@ on:
 
 jobs:
   upload_pypi:
-    uses: explosion/gha-cibuildwheel/publish_pypi.yml@main
+    uses: explosion/gha-cibuildwheel/.github/workflows/publish_pypi.yml@main
     with:
       pypi-package-name: 'confection'
