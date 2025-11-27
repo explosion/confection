@@ -7,7 +7,6 @@ from typing import (
     Callable,
     Dict,
     Generic,
-    Generator,
     List,
     Literal,
     Optional,
@@ -16,12 +15,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-    ForwardRef
 )
-from types import GeneratorType
 
 import catalogue
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
@@ -36,7 +30,6 @@ from ._config import (
 )
 from ._errors import ConfigValidationError
 from .util import is_promise
-from . import util
 
 _PromisedType = TypeVar("_PromisedType")
 
@@ -74,24 +67,17 @@ class Promise(Generic[_PromisedType]):
     def resolve(self, validate: bool = True) -> Any:
         if isinstance(self.getter, catalogue.RegistryError):
             raise self.getter
-        assert self.schema is not None
         kwargs = _recursive_resolve(self.kwargs, validate=validate)
-        assert isinstance(kwargs, dict)
         args = _recursive_resolve(self.var_args, validate=validate)
         args = list(args.values()) if isinstance(args, dict) else args
         if validate:
             schema_args = dict(kwargs)
             if args:
                 schema_args[ARGS_FIELD] = args
-            #schema_args = _replace_generators(schema_args)
             try:
-                kwargs = self.schema.model_validate(schema_args).model_dump()
+                _ = self.schema.model_validate(schema_args)
             except ValidationError as e:
                 raise ConfigValidationError(config=kwargs, errors=e.errors()) from None
-            if args:
-                # Do type coercion
-                args = kwargs.pop(ARGS_FIELD)
-        kwargs = {RESERVED_FIELDS_REVERSE.get(k, k): v for k, v in kwargs.items()}
         return self.getter(*args, **kwargs)  # type: ignore
 
     @classmethod
@@ -161,7 +147,6 @@ class registry:
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
-        schema = fix_forward_refs(schema)
         config = cls.fill(
             config,
             schema=schema,
@@ -289,18 +274,13 @@ class registry:
                 )
             elif isinstance(config[name], dict):
                 fields[name] = cls._make_unresolved_schema(
-                    _make_dummy_schema(config[name]), config[name]
+                    _make_dummy_schema(config[name]), config
                 )
-            elif isinstance(field.annotation, str) or field.annotation == ForwardRef:
-                fields[name] = (Any, Field(field.default))
             else:
-                fields[name] = (Any, Field(field.default))
-
-        model = create_model(
-            f"{schema.__name__}_UnresolvedConfig", __config__=schema.model_config, **fields
+                fields[name] = (field.annotation, Field(...))
+        return create_model(
+            "UnresolvedConfig", __config__={"extra": "forbid"}, **fields
         )
-        model.model_rebuild(raise_errors=True)
-        return model
 
     @classmethod
     def _make_unresolved_promise_schema(cls, obj: Dict[str, Any]) -> Type[BaseModel]:
@@ -377,7 +357,7 @@ def validate_resolved(config, schema: Type[BaseModel]):
     # If value is a generator we can't validate type without
     # consuming it (which doesn't work if it's infinite – see
     # schedule for examples). So we skip it.
-    config = _replace_generators(config)
+    config = dict(config)
     try:
         _ = schema.model_validate(config)
     except ValidationError as e:
@@ -485,22 +465,12 @@ def fix_positionals(config):
         return config
 
 
-def fix_forward_refs(schema: Type[BaseModel]) -> Type[BaseModel]:
-    fields = {}
-    for name, field_info in schema.model_fields.items():
-        if isinstance(field_info.annotation, str) or field_info.annotation == ForwardRef:
-            fields[name] = (Any, field_info)
-        else:
-            fields[name] = (field_info.annotation, field_info)
-    return create_model(schema.__name__, __config__=schema.model_config, **fields)
-
-
 def apply_overrides(
     config: Dict[str, Dict[str, Any]],
     overrides: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
     """Build first representation of the config:"""
-    output = _shallow_copy(config)
+    output = copy.deepcopy(config)
     for key, value in overrides.items():
         path = key.split(".")
         err_title = "Error parsing config overrides"
@@ -517,18 +487,6 @@ def apply_overrides(
     return output
 
 
-def _shallow_copy(obj):
-    """Ensure dict values in the config are new dicts, allowing assignment, without copying
-    leaf objects.
-    """
-    if isinstance(obj, dict):
-        return {k: _shallow_copy(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_shallow_copy(v) for v in obj]
-    else:
-        return obj
-
-
 def make_func_schema(func) -> Type[BaseModel]:
     fields = get_func_fields(func)
     model_config = {
@@ -536,54 +494,26 @@ def make_func_schema(func) -> Type[BaseModel]:
         "arbitrary_types_allowed": True,
         "alias_generator": alias_generator,
     }
-    return create_model(f"{func.__name__}_ArgModel", __config__=model_config, **fields)  # type: ignore
+    return create_model("ArgModel", __config__=model_config, **fields)  # type: ignore
 
 
 def get_func_fields(func) -> Dict[str, Tuple[Type, FieldInfo]]:
     # Read the argument annotations and defaults from the function signature
     sig_args = {}
-    for name, param in inspect.signature(func).parameters.items():
+    for param in inspect.signature(func).parameters.values():
         # If no annotation is specified assume it's anything
         annotation = param.annotation if param.annotation != param.empty else Any
-        annotation = _replace_forward_refs(annotation)
         # If no default value is specified assume that it's required
         default = param.default if param.default != param.empty else ...
         # Handle spread arguments and use their annotation as Sequence[whatever]
         if param.kind == param.VAR_POSITIONAL:
             spread_annot = Sequence[annotation]  # type: ignore
-            sig_args[ARGS_FIELD_ALIAS] = (spread_annot, Field(default, ))
+            sig_args[ARGS_FIELD_ALIAS] = (spread_annot, Field(default))
         else:
             name = RESERVED_FIELDS.get(param.name, param.name)
             sig_args[name] = (annotation, Field(default))
     return sig_args
 
 
-def _replace_forward_refs(annot):
-    if isinstance(annot, str) or annot == ForwardRef:
-        return Any
-    elif isinstance(annot, list):
-        return [_replace_forward_refs(x) for x in annot]
-    args = get_args(annot)
-    if not args:
-        return annot
-    else:
-        origin = get_origin(annot)
-        if origin == Literal:
-            return annot
-        args = [_replace_forward_refs(a) for a in args]
-        return origin[*args]
-
-
-def _replace_generators(data):
-    if isinstance(data, BaseModel):
-        return {k: _replace_generators(v) for k, v in data.model_dump().items()}
-    elif isinstance(data, dict):
-        return {k: _replace_generators(v) for k, v in data.items()}
-    elif isinstance(data, GeneratorType):
-        return []
-    elif isinstance(data, list):
-        return [_replace_generators(v) for v in data]
-    elif isinstance(data, tuple):
-        return tuple([_replace_generators(v) for v in data])
-    else:
-        return data
+def _is_model(type_):
+    return issubclass(type_, BaseModel)
