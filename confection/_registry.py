@@ -1,6 +1,5 @@
 import copy
 import inspect
-import json
 from dataclasses import dataclass
 from typing import (
     Any,
@@ -8,7 +7,6 @@ from typing import (
     Dict,
     Generic,
     List,
-    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -18,7 +16,7 @@ from typing import (
 )
 
 import catalogue
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
+from pydantic import BaseModel, Field, ValidationError, create_model
 from pydantic.fields import FieldInfo
 
 from ._config import (
@@ -249,11 +247,13 @@ class registry:
     def _make_unresolved_schema(
         cls, schema: Type[BaseModel], config
     ) -> Type[BaseModel]:
-        """Make a single schema to validate against, representing data with promises unresolved.
+        """Make a single schema to validate against, representing data with promises
+        unresolved.
 
-        When the config provides a value via a promise, we build a schema for the arguments for the
-        function it references, and insert that into the schema. This subschema describes a dictionary
-        that would be valid to call the referenced function.
+        When the config provides a value via a promise, we build a schema for the
+        arguments for the function it references, and insert that into the schema. This
+        subschema describes a dictionary that would be valid to call the referenced
+        function.
         """
         if not schema.model_fields:
             schema = _make_dummy_schema(config)
@@ -318,7 +318,9 @@ class registry:
             "arbitrary_types_allowed": True,
             "alias_generator": alias_generator,
         }
-        return create_model(f"{reg_name} {func_name} model", __config__=model_config, **fields)  # type: ignore
+        return create_model(
+            f"{reg_name} {func_name} model", __config__=model_config, **fields
+        )  # type: ignore
 
 
 def _make_dummy_schema(config):
@@ -413,8 +415,8 @@ def remove_extra_keys(
 def insert_promises(
     registry, config: Dict[str, Dict[str, Any]], resolve: bool, validate: bool
 ) -> Dict[str, Dict[str, Any]]:
-    """Create a version of a config dict where promises are recognised and replaced by Promise
-    dataclasses
+    """Create a version of a config dict where promises are recognised and replaced by
+    Promise dataclasses
     """
     output = {}
     for key, value in config.items():

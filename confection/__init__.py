@@ -1,11 +1,10 @@
-import re
-from typing import Any, Dict, Union
+from typing import Any
 
-import srsly
 from pydantic import BaseModel
 from pydantic.fields import Field as ModelField
 
-from ._config import (
+# FIXME some symbols are not in __all__; can we remove them?
+from ._config import (  # noqa: F401
     ARGS_FIELD,
     ARGS_FIELD_ALIAS,
     JSON_EXCEPTIONS,
@@ -18,7 +17,7 @@ from ._config import (
 )
 from ._errors import ConfigValidationError
 from ._registry import Promise, registry
-from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
+from .util import SimpleFrozenDict, SimpleFrozenList
 
 
 def alias_generator(name: str) -> str:

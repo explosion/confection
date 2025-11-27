@@ -1,6 +1,7 @@
 """
 Registered functions used for config tests.
 """
+
 import contextlib
 import dataclasses
 import shutil
@@ -69,8 +70,9 @@ def Adam(
     use_averages: bool = True,
 ):
     """
-    Mocks optimizer generation. Note that the returned object is not actually an optimizer. This function is merely used
-    to illustrate how to use the function registry, e.g. with thinc.
+    Mocks optimizer generation. Note that the returned object is not actually an
+    optimizer. This function is merely used to illustrate how to use the function
+    registry, e.g. with thinc.
     """
 
     @dataclasses.dataclass
