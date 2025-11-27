@@ -2,20 +2,27 @@ name: tests
 
 on:
   push:
+    branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    branches: ["*"]
+  workflow_dispatch: # allows you to trigger manually
+
+# When this workflow is queued, automatically cancel any previous running
+# or pending jobs from the same branch
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
     name: Validate
-    if: github.repository_owner == 'explosion'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure Python version
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
@@ -33,8 +40,6 @@ jobs:
           python -m flake8 confection --count --select=E901,E999,F821,F822,F823,W605 --show-source --statistics
   tests:
     name: Test
-    needs: Validate
-    if: github.repository == 'explosion/confection'
     strategy:
       fail-fast: false
       matrix:
@@ -45,10 +50,10 @@ jobs:
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure Python version
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
 
