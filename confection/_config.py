@@ -214,9 +214,12 @@ class Config(dict):
         as JSON. Mostly used internally and modifies the config in place.
         """
         self._validate_sections(config)
+
         # Sort sections by depth, so that we can iterate breadth-first. This
         # allows us to check that we're not expanding an undefined block.
-        get_depth = lambda item: len(item[0].split("."))
+        def get_depth(item):
+            return len(item[0].split("."))
+
         for section, values in sorted(config.items(), key=get_depth):
             if section == "DEFAULT":
                 # Skip [DEFAULT] section so it doesn't cause validation error
@@ -351,10 +354,13 @@ class Config(dict):
         account for subsections, which should always follow their parent.
         """
         sort_map = {section: i for i, section in enumerate(self.section_order)}
-        sort_key = lambda x: (
-            sort_map.get(x[0].split(".")[0], len(sort_map)),
-            _mask_positional_args(x[0]),
-        )
+
+        def sort_key(x):
+            return (
+                sort_map.get(x[0].split(".")[0], len(sort_map)),
+                _mask_positional_args(x[0]),
+            )
+
         return dict(sorted(data.items(), key=sort_key))
 
     def _set_overrides(self, config: "ConfigParser", overrides: Dict[str, Any]) -> None:
@@ -400,7 +406,8 @@ class Config(dict):
         self.clear()
         self.interpret_config(config)
         if overrides and interpolate:
-            # do the interpolation. Avoids recursion because the new call from_str call will have overrides as empty
+            # do the interpolation. Avoids recursion because the new call from_str call
+            # will have overrides as empty
             self = self.interpolate()
         self.is_interpolated = interpolate
         return self

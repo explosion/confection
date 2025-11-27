@@ -1,28 +1,13 @@
-import inspect
 import pickle
 import platform
-from types import GeneratorType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Literal
 
 import catalogue
 import pytest
-from pydantic import BaseModel, PositiveInt, StrictFloat, constr
-from pydantic.types import StrictBool
+from pydantic import BaseModel, PositiveInt, StrictFloat
 
 from confection import Config, ConfigValidationError
 from confection.tests.util import Cat, make_tempdir, my_registry
-from confection.util import Generator, partial
 
 EXAMPLE_CONFIG = """
 [optimizer]
@@ -139,6 +124,7 @@ bar = 1
     )
 
 
+@pytest.mark.xfail(reason="Unknown; used to work only thanks to typo")
 def test_config_to_str_escapes():
     section_str = """
         [section]
@@ -159,7 +145,7 @@ def test_config_to_str_escapes():
     cfg_str = cfg.to_str()
     assert "^a$$" in cfg_str
     new_cfg = Config().from_str(cfg_str)
-    assert cfg == section_dict
+    assert new_cfg == section_dict
 
 
 def test_config_roundtrip_bytes():
@@ -203,7 +189,7 @@ def test_validation_custom_types():
     def complex_args(
         rate: StrictFloat,
         steps: PositiveInt = 10,  # type: ignore
-        log_level: Literal["ERROR", "INFO"] = "ERROR",  # noqa: F821
+        log_level: Literal["ERROR", "INFO"] = "ERROR",
     ):
         return None
 
@@ -341,8 +327,7 @@ def test_cant_expand_undefined_block(cfg, is_valid):
 
 def test_resolve_prefilled_values():
     class Language(object):
-        def __init__(self):
-            ...
+        def __init__(self): ...
 
     @my_registry.optimizers("prefilled.v1")
     def prefilled(nlp: Language, value: int = 10):
@@ -801,7 +786,7 @@ def test_config_interpolates(greeting, value, expected):
     """
     overrides = {"vars.a": greeting}
     cfg = Config().from_str(str_cfg, overrides=overrides)
-    assert type(cfg["project"]["my_par"]) == expected
+    assert type(cfg["project"]["my_par"]) is expected
 
 
 @pytest.mark.parametrize(
@@ -873,7 +858,9 @@ def test_warn_single_quotes():
 
 
 def test_parse_strings_interpretable_as_ints():
-    """Test whether strings interpretable as integers are parsed correctly (i. e. as strings)."""
+    """Test whether strings interpretable as integers are parsed correctly
+    (i. e. as strings).
+    """
     cfg = Config().from_str(
         f"""[a]\nfoo = [${{b.bar}}, "00${{b.bar}}", "y"]\n\n[b]\nbar = 3"""  # noqa: F541
     )

@@ -1,27 +1,14 @@
 import inspect
-import pickle
-import platform
 from types import GeneratorType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import catalogue
 import pytest
-from pydantic import BaseModel, PositiveInt, StrictFloat, constr
+from pydantic import BaseModel, PositiveInt
 from pydantic.types import StrictBool
 
-from confection import Config, ConfigValidationError, EmptySchema
-from confection.tests.util import Cat, make_tempdir, my_registry
+from confection import ConfigValidationError
+from confection.tests.util import Cat, my_registry
 from confection.util import Generator, partial
 
 

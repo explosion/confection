@@ -38,8 +38,9 @@ def test_frozen_dict():
 
 @pytest.mark.parametrize("frozen_type", ("dict", "list"))
 def test_frozen_struct_deepcopy(frozen_type):
-    """Test whether setting default values for a FrozenDict/FrozenList works within a config, which utilizes
-    deepcopy."""
+    """Test whether setting default values for a FrozenDict/FrozenList works within a
+    config, which utilizes deepcopy.
+    """
     registry.bar = catalogue.create("confection", "bar", entry_points=False)
 
     @registry.bar.register("foo_dict.v1")
@@ -55,7 +56,7 @@ def test_frozen_struct_deepcopy(frozen_type):
         cfg.from_str(
             f"""
             [something]
-            @bar = "foo_{frozen_type}.v1"        
+            @bar = "foo_{frozen_type}.v1"
             """
         )
     )
