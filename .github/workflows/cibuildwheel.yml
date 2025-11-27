@@ -2,11 +2,11 @@ name: Build
 
 on:
   push:
-    tags:
-      # ytf did they invent their own syntax that's almost regex?
-      # ** matches 'zero or more of any character'
-      - 'release-v[0-9]+.[0-9]+.[0-9]+**'
-      - 'prerelease-v[0-9]+.[0-9]+.[0-9]+**'
+    branches: [main]
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch: # allows you to trigger manually
+
 jobs:
   build_wheels:
     uses: explosion/gha-cibuildwheel/.github/workflows/cibuildwheel.yml@main
@@ -17,4 +17,3 @@ jobs:
       pure-python: true
     secrets:
       gh-token: ${{ secrets.GITHUB_TOKEN }}
-
