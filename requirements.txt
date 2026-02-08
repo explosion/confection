@@ -1,4 +1,4 @@
-pydantic>=2.0,<3.0
+pydantic>=2.11,<3.0
 srsly>=2.4.0,<3.0.0
 # Development requirements
 catalogue>=2.0.3,<2.1.0
