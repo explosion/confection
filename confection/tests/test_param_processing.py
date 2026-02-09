@@ -87,15 +87,16 @@ class TestProcessParamAnnotation:
         result = process_param_annotation(annotation)
         assert result == annotation
 
-    def test_union_with_generator_reordered(self):
-        """Union with Generator after List should be reordered."""
+    def test_union_with_generator_wrapped(self):
+        """Union with Generator should be wrapped with generator-safe validator."""
+        from typing import get_origin, get_args, Annotated
         annotation = Union[float, List[float], Generator]
         result = process_param_annotation(annotation)
-        # Generator should come before List
-        args = result.__args__
-        gen_idx = next(i for i, a in enumerate(args) if _is_iterable_type(a))
-        list_idx = next(i for i, a in enumerate(args) if _is_sequence_type(a))
-        assert gen_idx < list_idx
+        # Should be wrapped in Annotated
+        assert get_origin(result) is Annotated
+        # First arg should be the original Union type
+        inner_type = get_args(result)[0]
+        assert get_origin(inner_type) is Union
 
     def test_union_without_generator_unchanged(self):
         """Union without Generator should be unchanged."""
@@ -317,27 +318,24 @@ def test_var_positional_wraps_in_sequence(name, annotation):
 
 @given(annotation=union_types())
 @settings(max_examples=100)
-def test_union_reordering_generators_before_sequences(annotation):
-    """Property test: After processing, generators always come before sequences in Unions."""
-    from typing import get_origin, get_args
+def test_union_with_generators_wrapped(annotation):
+    """Property test: Unions containing generators should be wrapped in Annotated."""
+    from typing import get_origin, get_args, Annotated
 
     result = process_param_annotation(annotation)
 
-    # Check if it's still a Union
-    if get_origin(result) is not Union:
-        return  # Not a Union after processing, nothing to check
+    # Check if annotation contains any generator types
+    has_generators = any(_is_iterable_type(arg) for arg in get_args(annotation))
 
-    args = get_args(result)
-
-    # Find indices of generator types and sequence types
-    generator_indices = [i for i, a in enumerate(args) if _is_iterable_type(a)]
-    sequence_indices = [i for i, a in enumerate(args) if _is_sequence_type(a)]
-
-    # If we have both generators and sequences, generators should come first
-    if generator_indices and sequence_indices:
-        max_generator_idx = max(generator_indices)
-        min_sequence_idx = min(sequence_indices)
-        assert max_generator_idx < min_sequence_idx, (
-            f"Generator at index {max_generator_idx} should come before "
-            f"sequence at index {min_sequence_idx} in {result}"
+    if has_generators:
+        # Should be wrapped in Annotated
+        assert get_origin(result) is Annotated, (
+            f"Union with generators should be wrapped in Annotated, got {result}"
         )
+        # First arg should be the original Union
+        inner = get_args(result)[0]
+        assert get_origin(inner) is Union
+    else:
+        # Should remain unchanged (or be wrapped for other reasons)
+        # Just verify it's still a valid type
+        assert result is not None

@@ -4,6 +4,7 @@ import sys
 from dataclasses import dataclass
 from types import GeneratorType
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
@@ -21,8 +22,9 @@ from typing import (
 )
 
 import catalogue
-from pydantic import BaseModel, Field, ValidationError, create_model
+from pydantic import BaseModel, Field, GetPydanticSchema, ValidationError, create_model
 from pydantic.fields import FieldInfo
+from pydantic_core import core_schema as cs
 
 from ._config import (
     ARGS_FIELD,
@@ -620,6 +622,46 @@ def _is_sequence_type(annotation: Any) -> bool:
     return False
 
 
+def _contains_generator_type(annotation: Any) -> bool:
+    """Check if annotation contains a generator/iterator type anywhere (including in unions)."""
+    if _is_iterable_type(annotation):
+        return True
+    origin = get_origin(annotation)
+    if origin is Union:
+        return any(_contains_generator_type(arg) for arg in get_args(annotation))
+    return False
+
+
+def _generator_safe_schema(source_type: Any, handler: Any) -> cs.CoreSchema:
+    """Wrap schema with generator check - generators pass through without validation.
+
+    This prevents Pydantic from consuming generators when validating Union types
+    that include both Generator and Sequence types.
+    """
+    inner_schema = handler(source_type)
+
+    def generator_first_validator(value: Any, val_handler: Any) -> Any:
+        # If it's a generator, return it immediately without validation
+        if isinstance(value, (GeneratorType, Iterator)) and not isinstance(
+            value, (str, bytes)
+        ):
+            return value
+        return val_handler(value)
+
+    return cs.no_info_wrap_validator_function(generator_first_validator, inner_schema)
+
+
+def _make_generator_safe(annotation: Any) -> Any:
+    """Wrap annotation to be generator-safe if it might receive generators.
+
+    This uses Pydantic's GetPydanticSchema to inject a custom validator that
+    checks for generators before any other validation occurs.
+    """
+    if _contains_generator_type(annotation):
+        return Annotated[annotation, GetPydanticSchema(_generator_safe_schema)]
+    return annotation
+
+
 def _reorder_union_for_generators(annotation: Any) -> Any:
     """Reorder Union types so iterators come before sequences.
 
@@ -651,11 +693,11 @@ def process_param_annotation(annotation: Any) -> Any:
     """Process a parameter annotation for use in a Pydantic schema.
 
     - Returns Any if annotation is empty/missing
-    - Reorders Union types so generators/iterators come before sequences
+    - Wraps generator-containing types with a validator that passes generators through
     """
     if annotation is inspect.Parameter.empty:
         return Any
-    return _reorder_union_for_generators(annotation)
+    return _make_generator_safe(annotation)
 
 
 def process_param_default(default: Any) -> Any:
