@@ -1,7 +1,8 @@
 """Focused tests to understand Pydantic v2's generator/iterator consumption behavior."""
 
+from typing import Generator, Iterable, Iterator, List, Union
+
 import pytest
-from typing import Generator, Iterator, Iterable, List, Union
 from pydantic import BaseModel, Field, create_model
 
 

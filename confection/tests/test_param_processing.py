@@ -4,23 +4,23 @@ Tests the functions that convert function parameters into Pydantic field definit
 """
 
 import inspect
-from typing import Any, Generator, Iterator, Iterable, List, Optional, Union, Sequence
+from typing import Any, Generator, Iterable, Iterator, List, Optional, Sequence, Union
 
 import pytest
-from hypothesis import given, strategies as st, settings
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from pydantic import Field
 from pydantic.fields import FieldInfo
 
 from confection._registry import (
-    process_param_annotation,
-    process_param_default,
-    get_param_field,
-    _reorder_union_for_generators,
+    ARGS_FIELD_ALIAS,
     _is_iterable_type,
     _is_sequence_type,
-    ARGS_FIELD_ALIAS,
+    _reorder_union_for_generators,
+    get_param_field,
+    process_param_annotation,
+    process_param_default,
 )
-
 
 # =============================================================================
 # Strategies for type annotations
@@ -92,7 +92,7 @@ class TestProcessParamAnnotation:
 
     def test_union_with_generator_wrapped(self):
         """Union with Generator should be wrapped with generator-safe validator."""
-        from typing import get_origin, get_args, Annotated
+        from typing import Annotated, get_args, get_origin
 
         annotation = Union[float, List[float], Generator]
         result = process_param_annotation(annotation)
@@ -338,7 +338,7 @@ def test_var_positional_wraps_in_sequence(name, annotation):
 @settings(max_examples=100)
 def test_union_with_generators_wrapped(annotation):
     """Property test: Unions containing generators should be wrapped in Annotated."""
-    from typing import get_origin, get_args, Annotated
+    from typing import Annotated, get_args, get_origin
 
     result = process_param_annotation(annotation)
 

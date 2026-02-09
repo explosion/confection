@@ -13,7 +13,6 @@ from ._errors import ConfigValidationError
 from ._registry import Promise, registry
 from .util import SimpleFrozenDict, SimpleFrozenList
 
-
 __all__ = [
     "Config",
     "Promise",

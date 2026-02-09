@@ -5,14 +5,15 @@ Uses property-based testing to explore the space of possible config values.
 
 import pytest
 import srsly
-from hypothesis import given, strategies as st, settings, example, HealthCheck
-from numpy.testing import assert_equal, assert_allclose
-from confection import Config
-from confection._config import try_load_json
-from confection._registry import make_func_schema, get_func_fields
-from confection.tests.util import my_registry
+from hypothesis import HealthCheck, example, given, settings
+from hypothesis import strategies as st
+from numpy.testing import assert_allclose, assert_equal
 from pydantic import ValidationError
 
+from confection import Config
+from confection._config import try_load_json
+from confection._registry import get_func_fields, make_func_schema
+from confection.tests.util import my_registry
 
 # =============================================================================
 # Unit tests for try_load_json - the core parsing function
