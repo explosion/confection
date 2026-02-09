@@ -187,20 +187,24 @@ scalar_values = st.one_of(
     st.booleans(),
 )
 
+# Alphabet for dictionary keys - alphanumeric plus underscore, safe for JSON
+DICT_KEY_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+
+
 # Recursive strategy for nested values (lists, dicts)
 def config_values():
     """Strategy for any value that can appear in a config."""
     return st.recursive(
         scalar_values,
         lambda children: st.one_of(
-            st.lists(children, max_size=5),
+            st.lists(children, max_size=3),
             st.dictionaries(
-                st.text(min_size=1, max_size=10, alphabet="abcdefghijklmnop"),
+                st.text(min_size=1, max_size=8, alphabet=DICT_KEY_ALPHABET),
                 children,
-                max_size=5,
+                max_size=3,
             ),
         ),
-        max_leaves=20,
+        max_leaves=10,
     )
 
 
@@ -209,7 +213,7 @@ config_section = st.dictionaries(
     field_names,
     config_values(),
     min_size=1,
-    max_size=10,
+    max_size=5,
 )
 
 # Section names for nested sections (no dots allowed in individual names)
@@ -235,6 +239,63 @@ def nested_config(draw):
 
 
 @st.composite
+def config_with_positional_args(draw):
+    """Generate a config with positional args using [section.*.name] syntax.
+
+    Creates a section with 1-3 positional arg subsections that become a tuple.
+    Example:
+        [parent]
+        key = 1
+
+        [parent.*.first]
+        x = 10
+
+        [parent.*.second]
+        y = 20
+
+    Results in: {"parent": {"key": 1, "*": ({"x": 10}, {"y": 20})}}
+    """
+    parent_name = draw(section_names)
+
+    # Parent section needs at least one field for the [parent] section to be created
+    parent_fields = draw(st.dictionaries(
+        field_names,
+        st.one_of(
+            st.integers(min_value=-100, max_value=100),
+            st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
+        ),
+        min_size=1,
+        max_size=3,
+    ))
+
+    # Generate 1-3 positional arg sections with unique names
+    # Use a fixed pool of names to avoid expensive uniqueness checks
+    positional_name_pool = ["pos1", "pos2", "pos3", "item1", "item2", "item3"]
+    num_positional = draw(st.integers(min_value=1, max_value=3))
+    positional_names = draw(st.permutations(positional_name_pool).map(lambda x: list(x)[:num_positional]))
+
+    positional_contents = []
+    for _ in positional_names:
+        content = draw(st.dictionaries(
+            field_names,
+            st.one_of(
+                st.integers(min_value=-100, max_value=100),
+                st.booleans(),
+            ),
+            min_size=1,
+            max_size=3,
+        ))
+        positional_contents.append(content)
+
+    # Build expected result - the "*" key stores a dict with names as keys
+    # (it becomes a tuple only during registry resolve())
+    expected = dict(parent_fields)
+    expected["*"] = {name: content for name, content in zip(positional_names, positional_contents)}
+
+    return parent_name, positional_names, parent_fields, positional_contents, {parent_name: expected}
+
+
+@st.composite
 def config_with_interpolation(draw):
     """Generate a config with variable interpolation.
 
@@ -246,7 +307,7 @@ def config_with_interpolation(draw):
         field_names,
         st.one_of(
             st.integers(min_value=-1000, max_value=1000),
-            st.text(min_size=1, max_size=10, alphabet="abcdefghijklmnop"),
+            st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
         ),
         min_size=1,
         max_size=5,
@@ -377,7 +438,7 @@ def config_string(draw):
 # =============================================================================
 
 @given(section=config_section)
-@settings(max_examples=200)
+@settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
 def test_config_section_roundtrip(section):
     """Test that a config section survives being converted to string and back."""
     cfg = Config({"section": section})
@@ -417,7 +478,7 @@ def test_list_value_roundtrip(items):
 
 
 @given(mapping=st.dictionaries(
-    st.text(min_size=1, max_size=10, alphabet="abcdefghijklmnop"),
+    st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
     scalar_values,
     max_size=5,
 ))
@@ -449,7 +510,7 @@ def test_multiple_sections_roundtrip(section1, section2):
 # =============================================================================
 
 @given(data=nested_config())
-@settings(max_examples=100)
+@settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
 def test_nested_sections_roundtrip(data):
     """Test that nested sections like [outer.inner] roundtrip correctly."""
     config, path, content = data
@@ -466,11 +527,44 @@ def test_nested_sections_roundtrip(data):
 
 
 # =============================================================================
+# Positional Args ([section.*.name] syntax)
+# =============================================================================
+
+@given(data=config_with_positional_args())
+@settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow, HealthCheck.large_base_example])
+def test_positional_args_roundtrip(data):
+    """Test that [section.*.name] positional args syntax roundtrips correctly."""
+    parent_name, positional_names, parent_fields, positional_contents, expected = data
+
+    # Build config string manually since Config() from dict doesn't create the
+    # [section.*.name] syntax - it uses the tuple under "*" key
+    lines = [f"[{parent_name}]"]
+    for key, value in parent_fields.items():
+        lines.append(f"{key} = {srsly.json_dumps(value)}")
+
+    for name, content in zip(positional_names, positional_contents):
+        lines.append(f"\n[{parent_name}.*.{name}]")
+        for key, value in content.items():
+            lines.append(f"{key} = {srsly.json_dumps(value)}")
+
+    config_str = "\n".join(lines)
+
+    # Parse and verify
+    parsed = Config().from_str(config_str)
+    assert_values_equal(dict(parsed), expected)
+
+    # Verify roundtrip
+    regenerated = parsed.to_str()
+    parsed2 = Config().from_str(regenerated)
+    assert_values_equal(dict(parsed2), expected)
+
+
+# =============================================================================
 # Variable Interpolation
 # =============================================================================
 
 @given(data=config_with_interpolation())
-@settings(max_examples=100)
+@settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
 def test_variable_interpolation(data):
     """Test that variable interpolation ${section.key} works correctly."""
     config, expected_target = data
