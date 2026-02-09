@@ -7,7 +7,7 @@ import dataclasses
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Generator, Generic, Iterable, List, Optional, TypeVar, Union
+from typing import Generator, Generic, Iterable, List, Mapping, Optional, TypeVar, Union
 
 import catalogue
 from pydantic.types import StrictBool  # type: ignore
@@ -122,6 +122,24 @@ def make_my_optimizer(learn_rate: List[float], beta1: float):
 @my_registry.schedules("my_cool_repetitive_schedule.v1")
 def decaying(base_rate: float, repeat: int) -> List[float]:
     return repeat * [base_rate]
+
+
+@my_registry.cats("mapping_cat.v1")
+def mapping_cat(mapping_table: Mapping[int, int], default: int = 0) -> str:
+    """Function with a Mapping parameter to test Pydantic 2 forward reference resolution."""
+    return f"mapping with {len(mapping_table)} items, default={default}"
+
+
+# Use __annotations__ to simulate how Cython stores annotations as strings
+# (Cython converts type annotations to ForwardRef strings)
+@my_registry.cats("string_annotated_mapping_cat.v1")
+def string_annotated_mapping_cat(mapping_table, default: int = 0) -> str:
+    """Function with string annotation to simulate Cython behavior."""
+    return f"mapping with {len(mapping_table)} items, default={default}"
+
+
+# Manually set annotation as string to simulate Cython's behavior
+string_annotated_mapping_cat.__annotations__["mapping_table"] = "Mapping[int, int]"
 
 
 @contextlib.contextmanager

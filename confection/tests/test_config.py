@@ -467,7 +467,7 @@ def test_config_interpolation_sections(d):
     # Non-string references in string (converted to string)
     c_str = f"""[a]\nx = ["hello", "world"]\n\n[b]\ny = "result: ${{a{d}x}}\""""
     config = Config().from_str(c_str)
-    assert config["b"]["y"] == "result: ['hello', 'world']"
+    assert config["b"]["y"] == 'result: ["hello", "world"]'
     # References to sections referencing sections
     c_str = """[a]\nfoo = "x"\n\n[b]\nbar = ${a}\n\n[c]\nbaz = ${b}"""
     config = Config().from_str(c_str)

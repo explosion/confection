@@ -146,7 +146,7 @@ class SimpleFrozenList(list):
 def is_promise(obj) -> bool:
     if not hasattr(obj, "keys"):
         return False
-    id_keys = [k for k in obj.keys() if k.startswith("@")]
+    id_keys = [k for k in obj.keys() if isinstance(k, str) and k.startswith("@")]
     if len(id_keys):
         return True
     return False
