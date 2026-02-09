@@ -60,16 +60,23 @@ class CustomInterpolation(ExtendedInterpolation):
             parsed = json.loads(v)
         except json.JSONDecodeError:
             return v  # Not valid JSON, already a plain string
-        return str(parsed)
+        if isinstance(parsed, str):
+            return parsed  # Unwrap JSON string
+        # Use json.dumps() for non-strings, escaping inner quotes so they don't
+        # conflict with the outer JSON string quotes
+        return json.dumps(parsed).replace('"', '\\"')
 
     def before_get(self, parser, section, option, value, defaults):
         # Mostly copy-pasted from the built-in configparser implementation.
+        # The interpolate() method resolves ${...} references and appends pieces
+        # to L. For a bare reference like ${x}, L has one element. For compound
+        # expressions like "hello ${x}", L has multiple pieces that we join.
+        # Compound results stay as strings (coerced via _coerce_for_string_context),
+        # while bare references keep their JSON type for _interpret_value to parse.
         L = []
         self.interpolate(parser, option, L, value, section, defaults, 1)
         if len(L) == 1:
-            # Bare reference - keep as-is for _interpret_value to handle
             return L[0]
-        # Compound expression - coerce pieces for string concatenation
         return "".join(self._coerce_for_string_context(piece) for piece in L)
 
     def interpolate(self, parser, option, accum, rest, section, map, depth):
