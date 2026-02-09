@@ -3,7 +3,7 @@
 from typing import Generator, Iterable, Iterator, List, Union
 
 import pytest
-from pydantic import BaseModel, Field, create_model
+from pydantic import create_model
 
 
 def make_generator():
@@ -39,7 +39,6 @@ class TestPydanticGeneratorBehavior:
         """Iterator annotation alone - NOT SUPPORTED by Pydantic without arbitrary_types_allowed."""
         import pydantic
 
-        gen = make_generator()
         with pytest.raises(pydantic.errors.PydanticSchemaGenerationError):
             create_model("M", field=(Iterator, ...))
 
@@ -78,7 +77,7 @@ class TestPydanticUnionBehavior:
         """Union with Generator listed last - CONSUMED (List tried first)."""
         gen = make_generator()
         Model = create_model("M", field=(Union[float, List[float], Generator], ...))
-        result = Model.model_validate({"field": gen})
+        Model.model_validate({"field": gen})
         # Generator is consumed because List[float] is tried first
         assert_consumed(gen)
 
@@ -100,7 +99,7 @@ class TestPydanticUnionBehavior:
         """Union with Iterable listed last - CONSUMED (List tried first)."""
         gen = make_generator()
         Model = create_model("M", field=(Union[float, List[float], Iterable], ...))
-        result = Model.model_validate({"field": gen})
+        Model.model_validate({"field": gen})
         # Generator is consumed because List[float] is tried first
         assert_consumed(gen)
 
@@ -139,7 +138,7 @@ class TestPydanticUnionParameterized:
         Model = create_model(
             "M", field=(Union[float, List[float], Generator[float, None, None]], ...)
         )
-        result = Model.model_validate({"field": gen})
+        Model.model_validate({"field": gen})
         # This FAILS - generator is consumed because List comes first
         assert_consumed(gen)
 
@@ -158,7 +157,7 @@ class TestPydanticUnionParameterized:
         Model = create_model(
             "M", field=(Union[float, List[float], Iterable[float]], ...)
         )
-        result = Model.model_validate({"field": gen})
+        Model.model_validate({"field": gen})
         # This FAILS - generator is consumed because List comes first
         assert_consumed(gen)
 
@@ -186,7 +185,7 @@ class TestUnionOrderMatters:
         """Generator after List[float] - CONSUMED."""
         gen = make_generator()
         Model = create_model("M", field=(Union[float, List[float], Generator], ...))
-        result = Model.model_validate({"field": gen})
+        Model.model_validate({"field": gen})
         assert_consumed(gen)
 
     def test_iterable_before_list_ok(self):
@@ -200,7 +199,7 @@ class TestUnionOrderMatters:
         """Iterable after List[float] - CONSUMED."""
         gen = make_generator()
         Model = create_model("M", field=(Union[float, List[float], Iterable], ...))
-        result = Model.model_validate({"field": gen})
+        Model.model_validate({"field": gen})
         assert_consumed(gen)
 
 

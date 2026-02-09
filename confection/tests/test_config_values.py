@@ -3,16 +3,18 @@
 Uses property-based testing to explore the space of possible config values.
 """
 
+from configparser import ConfigParser, ExtendedInterpolation
+
 import pytest
 import srsly
-from hypothesis import HealthCheck, example, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from numpy.testing import assert_allclose, assert_equal
 from pydantic import ValidationError
 
 from confection import Config
 from confection._config import try_load_json
-from confection._registry import get_func_fields, make_func_schema
+from confection._registry import make_func_schema
 from confection.tests.util import my_registry
 
 # =============================================================================
@@ -92,8 +94,6 @@ class TestTryLoadJson:
 # =============================================================================
 # These tests define what SHOULD work if we remove the buggy CustomInterpolation
 
-from configparser import ConfigParser, ExtendedInterpolation
-
 
 class TestPlainExtendedInterpolation:
     """Test parsing with plain ExtendedInterpolation (no custom before_read)."""
@@ -127,7 +127,7 @@ class TestPlainExtendedInterpolation:
         parser = self._parse(f"[s]\nv = {ini_value}")
         raw = parser.get("s", "v")
         parsed = self._parse_value(raw)
-        assert type(parsed) == expected_type
+        assert type(parsed) is expected_type
         assert parsed == expected_value
 
     # Quoted strings - the key test cases

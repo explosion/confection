@@ -6,10 +6,8 @@ Tests the functions that convert function parameters into Pydantic field definit
 import inspect
 from typing import Any, Generator, Iterable, List, Sequence, Union
 
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import Field
 from pydantic.fields import FieldInfo
 
 from confection._registry import (
@@ -264,19 +262,9 @@ class TestReorderUnionForGenerators:
         result = _reorder_union_for_generators(annotation)
         args = result.__args__
 
-        # Iterable should come before List
-        iterable_idx = None
-        list_idx = None
-        for i, arg in enumerate(args):
-            if arg is Iterable or (
-                hasattr(arg, "__origin__") and arg.__origin__ is Iterable
-            ):
-                iterable_idx = i
-            if _is_sequence_type(arg):
-                list_idx = i
-
         # Note: Iterable is not an iterator type in our check, so this might not reorder
-        # Let's verify the actual behavior
+        # Let's verify the actual behavior - just check the result is valid
+        assert args is not None
 
 
 # =============================================================================
