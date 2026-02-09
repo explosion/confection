@@ -41,7 +41,9 @@ VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 
 
 class CustomInterpolation(ExtendedInterpolation):
-    def before_read(self, parser, section, option, value):
+    def before_read(
+        self, parser: ConfigParser, section: str, option: str, value: str
+    ) -> str:
         # Warn about single-quoted strings (common mistake)
         if value and value[0] == value[-1] == "'":
             warnings.warn(
@@ -66,20 +68,36 @@ class CustomInterpolation(ExtendedInterpolation):
         # conflict with the outer JSON string quotes
         return json.dumps(parsed).replace('"', '\\"')
 
-    def before_get(self, parser, section, option, value, defaults):
+    def before_get(
+        self,
+        parser: ConfigParser,
+        section: str,
+        option: str,
+        value: str,
+        defaults: Dict[str, str],
+    ) -> str:
         # Mostly copy-pasted from the built-in configparser implementation.
         # The interpolate() method resolves ${...} references and appends pieces
         # to L. For a bare reference like ${x}, L has one element. For compound
         # expressions like "hello ${x}", L has multiple pieces that we join.
         # Compound results stay as strings (coerced via _coerce_for_string_context),
         # while bare references keep their JSON type for _interpret_value to parse.
-        L = []
+        L: List[str] = []
         self.interpolate(parser, option, L, value, section, defaults, 1)
         if len(L) == 1:
             return L[0]
         return "".join(self._coerce_for_string_context(piece) for piece in L)
 
-    def interpolate(self, parser, option, accum, rest, section, map, depth):
+    def interpolate(
+        self,
+        parser: ConfigParser,
+        option: str,
+        accum: List[str],
+        rest: str,
+        section: str,
+        map: Dict[str, str],
+        depth: int,
+    ) -> None:
         # Mostly copy-pasted from the built-in configparser implementation.
         # We need to overwrite this method so we can add special handling for
         # block references :( All values produced here should be strings –
@@ -104,7 +122,7 @@ class CustomInterpolation(ExtendedInterpolation):
                 rest = rest[2:]
             elif c == "{":
                 # We want to treat both ${a:b} and ${a.b} the same
-                m = self._KEYCRE.match(rest)  # type: ignore
+                m = self._KEYCRE.match(rest)  # type: ignore[attr-defined]
                 if m is None:
                     err = f"bad interpolation variable reference {rest}"
                     raise InterpolationSyntaxError(option, section, err)
@@ -120,7 +138,7 @@ class CustomInterpolation(ExtendedInterpolation):
                             v = map[opt]
                         else:
                             # We have block reference, store it as a special key
-                            section_name = parser[parser.optionxform(path[0])]._name
+                            section_name = parser[parser.optionxform(path[0])]._name  # type: ignore[union-attr]
                             v = self._get_section_name(section_name)
                     elif len(path) == 2:
                         sect = path[0]
@@ -130,7 +148,7 @@ class CustomInterpolation(ExtendedInterpolation):
                         # If a variable doesn't exist, try again and treat the
                         # reference as a section
                         if v == fallback:
-                            v = self._get_section_name(parser[f"{sect}.{opt}"]._name)
+                            v = self._get_section_name(parser[f"{sect}.{opt}"]._name)  # type: ignore[union-attr]
                     else:
                         err = f"More than one ':' found: {rest}"
                         raise InterpolationSyntaxError(option, section, err)
