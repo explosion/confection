@@ -9,7 +9,9 @@ from hypothesis import given, strategies as st, settings, example, HealthCheck
 from numpy.testing import assert_equal, assert_allclose
 from confection import Config
 from confection._config import try_load_json
+from confection._registry import make_func_schema, get_func_fields
 from confection.tests.util import my_registry
+from pydantic import ValidationError
 
 
 # =============================================================================
@@ -841,3 +843,166 @@ def test_registry_fill_adds_defaults(evil, cute):
     # Should have cute with default value
     assert filled["cat"]["cute"] is True
     assert filled["cat"]["evil"] == evil
+
+
+# =============================================================================
+# Schema Inference Tests (make_func_schema / get_func_fields)
+# =============================================================================
+# Tests for inferring Pydantic schemas from function signatures
+
+
+def make_test_func_int(x: int) -> int:
+    return x
+
+
+def make_test_func_str(x: str) -> str:
+    return x
+
+
+def make_test_func_bool(x: bool) -> bool:
+    return x
+
+
+def make_test_func_float(x: float) -> float:
+    return x
+
+
+def make_test_func_optional(x: int, y: str = "default") -> str:
+    return f"{x} {y}"
+
+
+def make_test_func_all_optional(x: int = 10, y: str = "default") -> str:
+    return f"{x} {y}"
+
+
+def make_test_func_list(x: list) -> list:
+    return x
+
+
+def make_test_func_typed_list(x: list[int]) -> list:
+    return x
+
+
+class TestMakeFuncSchema:
+    """Tests for make_func_schema inferring Pydantic schemas from functions."""
+
+    def test_schema_accepts_correct_int(self):
+        """Schema accepts correct int type."""
+        schema = make_func_schema(make_test_func_int)
+        result = schema.model_validate({"x": 42})
+        assert result.x == 42
+
+    def test_schema_rejects_wrong_type_for_int(self):
+        """Schema rejects string when int expected."""
+        schema = make_func_schema(make_test_func_int)
+        with pytest.raises(ValidationError):
+            schema.model_validate({"x": "not an int"})
+
+    def test_schema_accepts_correct_str(self):
+        """Schema accepts correct str type."""
+        schema = make_func_schema(make_test_func_str)
+        result = schema.model_validate({"x": "hello"})
+        assert result.x == "hello"
+
+    def test_schema_accepts_correct_bool(self):
+        """Schema accepts correct bool type."""
+        schema = make_func_schema(make_test_func_bool)
+        result = schema.model_validate({"x": True})
+        assert result.x is True
+
+    def test_schema_accepts_correct_float(self):
+        """Schema accepts correct float type."""
+        schema = make_func_schema(make_test_func_float)
+        result = schema.model_validate({"x": 3.14})
+        assert result.x == 3.14
+
+    def test_schema_requires_required_param(self):
+        """Schema requires parameters without defaults."""
+        schema = make_func_schema(make_test_func_optional)
+        with pytest.raises(ValidationError):
+            schema.model_validate({"y": "provided"})  # missing x
+
+    def test_schema_uses_default_for_optional(self):
+        """Schema uses default value for optional parameters."""
+        schema = make_func_schema(make_test_func_optional)
+        result = schema.model_validate({"x": 5})
+        assert result.x == 5
+        assert result.y == "default"
+
+    def test_schema_all_optional_uses_defaults(self):
+        """Schema uses defaults when all params are optional."""
+        schema = make_func_schema(make_test_func_all_optional)
+        result = schema.model_validate({})
+        assert result.x == 10
+        assert result.y == "default"
+
+    def test_schema_rejects_extra_fields(self):
+        """Schema rejects extra fields not in function signature."""
+        schema = make_func_schema(make_test_func_int)
+        with pytest.raises(ValidationError):
+            schema.model_validate({"x": 1, "extra": "not allowed"})
+
+    def test_schema_accepts_list(self):
+        """Schema accepts list type."""
+        schema = make_func_schema(make_test_func_list)
+        result = schema.model_validate({"x": [1, 2, 3]})
+        assert result.x == [1, 2, 3]
+
+
+@given(value=st.integers())
+@settings(max_examples=50)
+def test_schema_int_property(value):
+    """Property test: schema validates any integer."""
+    schema = make_func_schema(make_test_func_int)
+    result = schema.model_validate({"x": value})
+    assert result.x == value
+
+
+@given(value=st.text(max_size=100))
+@settings(max_examples=50)
+def test_schema_str_property(value):
+    """Property test: schema validates any string."""
+    schema = make_func_schema(make_test_func_str)
+    result = schema.model_validate({"x": value})
+    assert result.x == value
+
+
+@given(value=st.booleans())
+@settings(max_examples=10)
+def test_schema_bool_property(value):
+    """Property test: schema validates any boolean."""
+    schema = make_func_schema(make_test_func_bool)
+    result = schema.model_validate({"x": value})
+    assert result.x == value
+
+
+@given(value=st.floats(allow_nan=False, allow_infinity=False))
+@settings(max_examples=50)
+def test_schema_float_property(value):
+    """Property test: schema validates any float."""
+    schema = make_func_schema(make_test_func_float)
+    result = schema.model_validate({"x": value})
+    assert result.x == value
+
+
+@given(required=st.integers(), optional=st.text(max_size=20) | st.none())
+@settings(max_examples=50)
+def test_schema_optional_property(required, optional):
+    """Property test: schema handles required and optional params."""
+    schema = make_func_schema(make_test_func_optional)
+    if optional is None:
+        result = schema.model_validate({"x": required})
+        assert result.y == "default"
+    else:
+        result = schema.model_validate({"x": required, "y": optional})
+        assert result.y == optional
+    assert result.x == required
+
+
+@given(items=st.lists(st.integers(), max_size=10))
+@settings(max_examples=50)
+def test_schema_list_property(items):
+    """Property test: schema validates lists."""
+    schema = make_func_schema(make_test_func_list)
+    result = schema.model_validate({"x": items})
+    assert result.x == items
