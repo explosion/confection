@@ -4,7 +4,7 @@ Tests the functions that convert function parameters into Pydantic field definit
 """
 
 import inspect
-from typing import Any, Generator, Iterable, Iterator, List, Optional, Sequence, Union
+from typing import Any, Generator, Iterable, List, Sequence, Union
 
 import pytest
 from hypothesis import given, settings
