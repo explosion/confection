@@ -2,9 +2,11 @@ name: Build
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: ["*"]
+    tags:
+      # ytf did they invent their own syntax that's almost regex?
+      # ** matches 'zero or more of any character'
+      - 'release-v[0-9]+.[0-9]+.[0-9]+**'
+      - 'prerelease-v[0-9]+.[0-9]+.[0-9]+**'
   workflow_dispatch: # allows you to trigger manually
 
 jobs:
