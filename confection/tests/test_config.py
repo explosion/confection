@@ -124,7 +124,6 @@ bar = 1
     )
 
 
-@pytest.mark.xfail(reason="Unknown; used to work only thanks to typo")
 def test_config_to_str_escapes():
     section_str = """
         [section]
@@ -468,7 +467,7 @@ def test_config_interpolation_sections(d):
     # Non-string references in string (converted to string)
     c_str = f"""[a]\nx = ["hello", "world"]\n\n[b]\ny = "result: ${{a{d}x}}\""""
     config = Config().from_str(c_str)
-    assert config["b"]["y"] == 'result: ["hello", "world"]'
+    assert config["b"]["y"] == "result: ['hello', 'world']"
     # References to sections referencing sections
     c_str = """[a]\nfoo = "x"\n\n[b]\nbar = ${a}\n\n[c]\nbaz = ${b}"""
     config = Config().from_str(c_str)
@@ -807,22 +806,22 @@ def test_config_interpolates(greeting, value, expected):
         [342, "hello ${vars.a}", "hello 342"],
         ["everyone", "hello ${vars.a}", "hello everyone"],
         ["tout le monde", "hello ${vars.a}", "hello tout le monde"],
-        pytest.param("42", "hello ${vars.a}", "hello 42", marks=pytest.mark.xfail),
+        ["42", "hello ${vars.a}", "hello 42"],
         # substituting part of a implicit string inside a list
         [342, "[1, hello ${vars.a}, 3]", "hello 342"],
         ["everyone", "[1, hello ${vars.a}, 3]", "hello everyone"],
         ["tout le monde", "[1, hello ${vars.a}, 3]", "hello tout le monde"],
-        pytest.param("42", "[1, hello ${vars.a}, 3]", "hello 42", marks=pytest.mark.xfail),
+        ["42", "[1, hello ${vars.a}, 3]", "hello 42"],
         # substituting part of a explicit string inside a list
         [342, "[1, 'hello ${vars.a}', '3']", "hello 342"],
         ["everyone", "[1, 'hello ${vars.a}', '3']", "hello everyone"],
         ["tout le monde", "[1, 'hello ${vars.a}', '3']", "hello tout le monde"],
-        pytest.param("42", "[1, 'hello ${vars.a}', '3']", "hello 42", marks=pytest.mark.xfail),
+        ["42", "[1, 'hello ${vars.a}', '3']", "hello 42"],
         # more complicated example
         [342, "[{'name':'x','script':['hello ${vars.a}']}]", "hello 342"],
         ["everyone", "[{'name':'x','script':['hello ${vars.a}']}]", "hello everyone"],
         ["tout le monde", "[{'name':'x','script':['hello ${vars.a}']}]", "hello tout le monde"],
-        pytest.param("42", "[{'name':'x','script':['hello ${vars.a}']}]", "hello 42", marks=pytest.mark.xfail),
+        ["42", "[{'name':'x','script':['hello ${vars.a}']}]", "hello 42"],
         # fmt: on
     ],
 )
