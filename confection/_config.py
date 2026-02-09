@@ -55,6 +55,7 @@ class CustomInterpolation(ExtendedInterpolation):
     def _coerce_for_string_context(self, v: str) -> str:
         """Coerce a raw config value for use in a compound string expression."""
         import json
+
         # Don't coerce section references - they need to stay quoted for JSON
         if SECTION_PREFIX in v:
             return v
@@ -320,9 +321,15 @@ class Config(dict):
 
     def _get_section_ref(self, value: Any, *, parent: List[str] = []) -> Any:
         """Get a single section reference."""
-        if isinstance(value, str) and value.startswith(f'"{SECTION_PREFIX}'):  # pragma: no cover
+        if isinstance(value, str) and value.startswith(
+            f'"{SECTION_PREFIX}'
+        ):  # pragma: no cover
             value = try_load_json(value)  # pragma: no cover
-        if isinstance(value, str) and value.startswith(SECTION_PREFIX) and value != SECTION_PREFIX:
+        if (
+            isinstance(value, str)
+            and value.startswith(SECTION_PREFIX)
+            and value != SECTION_PREFIX
+        ):
             parts = value.replace(SECTION_PREFIX, "", 1).split(".")
             result = self
             for item in parts:
@@ -337,7 +344,11 @@ class Config(dict):
                         config=self, errors=err, title=err_title
                     ) from None
             return result
-        elif isinstance(value, str) and SECTION_PREFIX in value and value != SECTION_PREFIX:
+        elif (
+            isinstance(value, str)
+            and SECTION_PREFIX in value
+            and value != SECTION_PREFIX
+        ):
             # String value references a section (either a dict or return
             # value of promise). We can't allow this, since variables are
             # always interpolated *before* configs are resolved.

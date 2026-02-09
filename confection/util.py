@@ -11,7 +11,8 @@ _DIn = TypeVar("_DIn")
 class Decorator(Protocol):
     """Protocol to mark a function as returning its child with identical signature."""
 
-    def __call__(self, name: str) -> Callable[[_DIn], _DIn]: ...
+    def __call__(self, name: str) -> Callable[[_DIn], _DIn]:
+        ...
 
 
 # This is how functools.partials seems to do it, too, to retain the return type

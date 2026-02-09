@@ -37,6 +37,7 @@ class TestPydanticGeneratorBehavior:
     def test_iterator_annotation_not_supported(self):
         """Iterator annotation alone - NOT SUPPORTED by Pydantic without arbitrary_types_allowed."""
         import pydantic
+
         gen = make_generator()
         with pytest.raises(pydantic.errors.PydanticSchemaGenerationError):
             create_model("M", field=(Iterator, ...))
@@ -83,6 +84,7 @@ class TestPydanticUnionBehavior:
     def test_union_iterator_not_supported(self):
         """Iterator in Union - NOT SUPPORTED by Pydantic."""
         import pydantic
+
         with pytest.raises(pydantic.errors.PydanticSchemaGenerationError):
             create_model("M", field=(Union[Iterator, List[float], float], ...))
 
@@ -115,6 +117,7 @@ class TestPydanticParameterizedTypes:
     def test_iterator_parameterized_not_supported(self):
         """Iterator[YieldType] - NOT SUPPORTED by Pydantic."""
         import pydantic
+
         with pytest.raises(pydantic.errors.PydanticSchemaGenerationError):
             create_model("M", field=(Iterator[float], ...))
 

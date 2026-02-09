@@ -34,13 +34,15 @@ list_types = st.sampled_from([List, List[int], List[str], List[float]])
 sequence_types = st.sampled_from([Sequence, Sequence[int], Sequence[str]])
 
 # Generator/Iterable types (these should NOT consume iterators)
-generator_types = st.sampled_from([
-    Generator,
-    Generator[int, None, None],
-    Generator[float, None, None],
-    Iterable,
-    Iterable[int],
-])
+generator_types = st.sampled_from(
+    [
+        Generator,
+        Generator[int, None, None],
+        Generator[float, None, None],
+        Iterable,
+        Iterable[int],
+    ]
+)
 
 # Non-union types
 non_union_types = st.one_of(simple_types, list_types, generator_types)
@@ -67,6 +69,7 @@ all_annotations = st.one_of(non_union_types, union_types())
 # Tests for process_param_annotation
 # =============================================================================
 
+
 class TestProcessParamAnnotation:
     """Tests for process_param_annotation function."""
 
@@ -90,6 +93,7 @@ class TestProcessParamAnnotation:
     def test_union_with_generator_wrapped(self):
         """Union with Generator should be wrapped with generator-safe validator."""
         from typing import get_origin, get_args, Annotated
+
         annotation = Union[float, List[float], Generator]
         result = process_param_annotation(annotation)
         # Should be wrapped in Annotated
@@ -108,6 +112,7 @@ class TestProcessParamAnnotation:
 # =============================================================================
 # Tests for process_param_default
 # =============================================================================
+
 
 class TestProcessParamDefault:
     """Tests for process_param_default function."""
@@ -151,6 +156,7 @@ class TestProcessParamDefault:
 # Tests for get_param_field
 # =============================================================================
 
+
 class TestGetParamField:
     """Tests for get_param_field function."""
 
@@ -176,13 +182,17 @@ class TestGetParamField:
     def test_no_annotation(self):
         """Missing annotation should become Any."""
         name, (annotation, field_info) = get_param_field(
-            "x", inspect.Parameter.empty, inspect.Parameter.empty, inspect.Parameter.POSITIONAL_OR_KEYWORD
+            "x",
+            inspect.Parameter.empty,
+            inspect.Parameter.empty,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
         )
         assert annotation is Any
 
     def test_var_positional(self):
         """VAR_POSITIONAL (*args) should be wrapped in Sequence."""
         import collections.abc
+
         name, (annotation, field_info) = get_param_field(
             "args", str, inspect.Parameter.empty, inspect.Parameter.VAR_POSITIONAL
         )
@@ -204,6 +214,7 @@ class TestGetParamField:
 # =============================================================================
 # Tests for _reorder_union_for_generators
 # =============================================================================
+
 
 class TestReorderUnionForGenerators:
     """Tests for _reorder_union_for_generators function."""
@@ -243,7 +254,9 @@ class TestReorderUnionForGenerators:
 
         assert gen_idx is not None
         assert list_idx is not None
-        assert gen_idx < list_idx, f"Generator at {gen_idx} should be before List at {list_idx}"
+        assert (
+            gen_idx < list_idx
+        ), f"Generator at {gen_idx} should be before List at {list_idx}"
 
     def test_union_iterable_after_list_reordered(self):
         """Union with Iterable after List should be reordered."""
@@ -255,7 +268,9 @@ class TestReorderUnionForGenerators:
         iterable_idx = None
         list_idx = None
         for i, arg in enumerate(args):
-            if arg is Iterable or (hasattr(arg, "__origin__") and arg.__origin__ is Iterable):
+            if arg is Iterable or (
+                hasattr(arg, "__origin__") and arg.__origin__ is Iterable
+            ):
                 iterable_idx = i
             if _is_sequence_type(arg):
                 list_idx = i
@@ -268,11 +283,14 @@ class TestReorderUnionForGenerators:
 # Property-based tests for get_param_field
 # =============================================================================
 
+
 @given(
     name=st.from_regex(r"[a-z][a-z0-9_]{0,10}", fullmatch=True),
     annotation=all_annotations,
     has_default=st.booleans(),
-    default_value=st.one_of(st.integers(), st.text(max_size=20), st.booleans(), st.none()),
+    default_value=st.one_of(
+        st.integers(), st.text(max_size=20), st.booleans(), st.none()
+    ),
 )
 @settings(max_examples=100)
 def test_get_param_field_property(name, annotation, has_default, default_value):
@@ -329,9 +347,9 @@ def test_union_with_generators_wrapped(annotation):
 
     if has_generators:
         # Should be wrapped in Annotated
-        assert get_origin(result) is Annotated, (
-            f"Union with generators should be wrapped in Annotated, got {result}"
-        )
+        assert (
+            get_origin(result) is Annotated
+        ), f"Union with generators should be wrapped in Annotated, got {result}"
         # First arg should be the original Union
         inner = get_args(result)[0]
         assert get_origin(inner) is Union

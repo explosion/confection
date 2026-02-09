@@ -375,7 +375,9 @@ def fill_config(
 
 def _is_generator(obj: Any) -> bool:
     """Check if an object is a generator or iterator that would be consumed by validation."""
-    return isinstance(obj, (GeneratorType, Iterator)) and not isinstance(obj, (str, bytes))
+    return isinstance(obj, (GeneratorType, Iterator)) and not isinstance(
+        obj, (str, bytes)
+    )
 
 
 def _filter_generators(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -394,7 +396,8 @@ def _filter_generators(config: Dict[str, Any]) -> Dict[str, Any]:
             result[key] = _filter_generators(value)
         elif isinstance(value, list):
             result[key] = [
-                _filter_generators(v) if isinstance(v, dict)
+                _filter_generators(v)
+                if isinstance(v, dict)
                 else (None if _is_generator(v) else v)
                 for v in value
             ]
@@ -528,7 +531,9 @@ def _deep_copy_with_uncopyable(obj: Any, memo: Optional[Dict[int, Any]] = None) 
         result = {}
         memo[obj_id] = result
         for k, v in obj.items():
-            result[_deep_copy_with_uncopyable(k, memo)] = _deep_copy_with_uncopyable(v, memo)
+            result[_deep_copy_with_uncopyable(k, memo)] = _deep_copy_with_uncopyable(
+                v, memo
+            )
         return result
     elif isinstance(obj, list):
         result = []
@@ -750,5 +755,3 @@ def get_func_fields(func) -> Dict[str, Tuple[Type, FieldInfo]]:
         )
         sig_args[field_name] = field_def
     return sig_args
-
-

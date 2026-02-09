@@ -24,48 +24,57 @@ class TestTryLoadJson:
     """Test the core JSON parsing function."""
 
     # Valid JSON literals -> parsed Python values
-    @pytest.mark.parametrize("inp,expected", [
-        ("42", 42),
-        ("-42", -42),
-        ("3.14", 3.14),
-        ("-3.14", -3.14),
-        ("0", 0),
-        ("true", True),
-        ("false", False),
-        ("null", None),
-        ("[1, 2, 3]", [1, 2, 3]),
-        ('{"a": 1}', {"a": 1}),
-        ("[]", []),
-        ("{}", {}),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            ("42", 42),
+            ("-42", -42),
+            ("3.14", 3.14),
+            ("-3.14", -3.14),
+            ("0", 0),
+            ("true", True),
+            ("false", False),
+            ("null", None),
+            ("[1, 2, 3]", [1, 2, 3]),
+            ('{"a": 1}', {"a": 1}),
+            ("[]", []),
+            ("{}", {}),
+        ],
+    )
     def test_json_literals(self, inp, expected):
         """Valid JSON literals are parsed to Python values."""
         assert try_load_json(inp) == expected
 
     # Quoted strings -> unquoted Python strings
-    @pytest.mark.parametrize("inp,expected", [
-        ('"hello"', "hello"),
-        ('"with spaces"', "with spaces"),
-        ('""', ""),
-        ('"0"', "0"),           # Quoted "0" should be string, not int
-        ('"-42"', "-42"),       # Quoted "-42" should be string, not int
-        ('"true"', "true"),     # Quoted "true" should be string, not bool
-        ('"false"', "false"),
-        ('"null"', "null"),
-        ('"3.14"', "3.14"),     # Quoted "3.14" should be string, not float
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            ('"hello"', "hello"),
+            ('"with spaces"', "with spaces"),
+            ('""', ""),
+            ('"0"', "0"),  # Quoted "0" should be string, not int
+            ('"-42"', "-42"),  # Quoted "-42" should be string, not int
+            ('"true"', "true"),  # Quoted "true" should be string, not bool
+            ('"false"', "false"),
+            ('"null"', "null"),
+            ('"3.14"', "3.14"),  # Quoted "3.14" should be string, not float
+        ],
+    )
     def test_quoted_strings(self, inp, expected):
         """Quoted strings are unquoted to Python strings."""
         assert try_load_json(inp) == expected
 
     # Invalid JSON -> returned as-is
-    @pytest.mark.parametrize("inp", [
-        "hello",           # unquoted string
-        "hello world",     # unquoted with space
-        "not json",
-        "${var.ref}",      # variable reference
-        "hello ${var}",    # string with variable
-    ])
+    @pytest.mark.parametrize(
+        "inp",
+        [
+            "hello",  # unquoted string
+            "hello world",  # unquoted with space
+            "not json",
+            "${var.ref}",  # variable reference
+            "hello ${var}",  # string with variable
+        ],
+    )
     def test_invalid_json_returned_as_is(self, inp):
         """Invalid JSON strings are returned unchanged."""
         assert try_load_json(inp) == inp
@@ -99,16 +108,19 @@ class TestPlainExtendedInterpolation:
         return try_load_json(raw_value)
 
     # Basic value types
-    @pytest.mark.parametrize("ini_value,expected_type,expected_value", [
-        ("42", int, 42),
-        ("-42", int, -42),
-        ("3.14", float, 3.14),
-        ("true", bool, True),
-        ("false", bool, False),
-        ("null", type(None), None),
-        ("[1, 2, 3]", list, [1, 2, 3]),
-        ('{"a": 1}', dict, {"a": 1}),
-    ])
+    @pytest.mark.parametrize(
+        "ini_value,expected_type,expected_value",
+        [
+            ("42", int, 42),
+            ("-42", int, -42),
+            ("3.14", float, 3.14),
+            ("true", bool, True),
+            ("false", bool, False),
+            ("null", type(None), None),
+            ("[1, 2, 3]", list, [1, 2, 3]),
+            ('{"a": 1}', dict, {"a": 1}),
+        ],
+    )
     def test_unquoted_json_literals(self, ini_value, expected_type, expected_value):
         """Unquoted JSON literals parse to their Python types."""
         parser = self._parse(f"[s]\nv = {ini_value}")
@@ -118,17 +130,20 @@ class TestPlainExtendedInterpolation:
         assert parsed == expected_value
 
     # Quoted strings - the key test cases
-    @pytest.mark.parametrize("ini_value,expected", [
-        ('"hello"', "hello"),
-        ('"with spaces"', "with spaces"),
-        ('""', ""),
-        ('"0"', "0"),           # Must stay string, not become int
-        ('"-42"', "-42"),       # Must stay string, not become int
-        ('"3.14"', "3.14"),     # Must stay string, not become float
-        ('"true"', "true"),     # Must stay string, not become bool
-        ('"false"', "false"),
-        ('"null"', "null"),     # Must stay string, not become None
-    ])
+    @pytest.mark.parametrize(
+        "ini_value,expected",
+        [
+            ('"hello"', "hello"),
+            ('"with spaces"', "with spaces"),
+            ('""', ""),
+            ('"0"', "0"),  # Must stay string, not become int
+            ('"-42"', "-42"),  # Must stay string, not become int
+            ('"3.14"', "3.14"),  # Must stay string, not become float
+            ('"true"', "true"),  # Must stay string, not become bool
+            ('"false"', "false"),
+            ('"null"', "null"),  # Must stay string, not become None
+        ],
+    )
     def test_quoted_strings_stay_strings(self, ini_value, expected):
         """Quoted strings must parse to Python strings, not other types."""
         parser = self._parse(f"[s]\nv = {ini_value}")
@@ -184,7 +199,9 @@ field_names = st.from_regex(r"[a-z][a-z0-9_]{0,10}", fullmatch=True)
 
 # Scalar values
 scalar_values = st.one_of(
-    st.text(min_size=0, max_size=20, alphabet=st.characters(blacklist_categories=["Cs"])),
+    st.text(
+        min_size=0, max_size=20, alphabet=st.characters(blacklist_categories=["Cs"])
+    ),
     st.integers(min_value=-1000000, max_value=1000000),
     st.floats(allow_nan=False, allow_infinity=False, min_value=-1e6, max_value=1e6),
     st.booleans(),
@@ -261,41 +278,55 @@ def config_with_positional_args(draw):
     parent_name = draw(section_names)
 
     # Parent section needs at least one field for the [parent] section to be created
-    parent_fields = draw(st.dictionaries(
-        field_names,
-        st.one_of(
-            st.integers(min_value=-100, max_value=100),
-            st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
-        ),
-        min_size=1,
-        max_size=3,
-    ))
+    parent_fields = draw(
+        st.dictionaries(
+            field_names,
+            st.one_of(
+                st.integers(min_value=-100, max_value=100),
+                st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
+            ),
+            min_size=1,
+            max_size=3,
+        )
+    )
 
     # Generate 1-3 positional arg sections with unique names
     # Use a fixed pool of names to avoid expensive uniqueness checks
     positional_name_pool = ["pos1", "pos2", "pos3", "item1", "item2", "item3"]
     num_positional = draw(st.integers(min_value=1, max_value=3))
-    positional_names = draw(st.permutations(positional_name_pool).map(lambda x: list(x)[:num_positional]))
+    positional_names = draw(
+        st.permutations(positional_name_pool).map(lambda x: list(x)[:num_positional])
+    )
 
     positional_contents = []
     for _ in positional_names:
-        content = draw(st.dictionaries(
-            field_names,
-            st.one_of(
-                st.integers(min_value=-100, max_value=100),
-                st.booleans(),
-            ),
-            min_size=1,
-            max_size=3,
-        ))
+        content = draw(
+            st.dictionaries(
+                field_names,
+                st.one_of(
+                    st.integers(min_value=-100, max_value=100),
+                    st.booleans(),
+                ),
+                min_size=1,
+                max_size=3,
+            )
+        )
         positional_contents.append(content)
 
     # Build expected result - the "*" key stores a dict with names as keys
     # (it becomes a tuple only during registry resolve())
     expected = dict(parent_fields)
-    expected["*"] = {name: content for name, content in zip(positional_names, positional_contents)}
+    expected["*"] = {
+        name: content for name, content in zip(positional_names, positional_contents)
+    }
 
-    return parent_name, positional_names, parent_fields, positional_contents, {parent_name: expected}
+    return (
+        parent_name,
+        positional_names,
+        parent_fields,
+        positional_contents,
+        {parent_name: expected},
+    )
 
 
 @st.composite
@@ -306,15 +337,17 @@ def config_with_interpolation(draw):
     references some of those values via ${source.key} syntax.
     """
     # Generate source section with scalar values only (for simplicity)
-    source_fields = draw(st.dictionaries(
-        field_names,
-        st.one_of(
-            st.integers(min_value=-1000, max_value=1000),
-            st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
-        ),
-        min_size=1,
-        max_size=5,
-    ))
+    source_fields = draw(
+        st.dictionaries(
+            field_names,
+            st.one_of(
+                st.integers(min_value=-1000, max_value=1000),
+                st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
+            ),
+            min_size=1,
+            max_size=5,
+        )
+    )
 
     # Pick which fields to reference
     source_keys = list(source_fields.keys())
@@ -345,8 +378,9 @@ def config_with_interpolation(draw):
 # Values that can appear in a config string (INI format)
 # These are the literal string representations, not Python values
 ini_string_values = st.text(
-    min_size=1, max_size=20,
-    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- "
+    min_size=1,
+    max_size=20,
+    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_- ",
 )
 ini_int_values = st.integers(min_value=-10000, max_value=10000).map(str)
 ini_float_values = st.floats(
@@ -403,7 +437,9 @@ def config_string(draw):
                 field_name = draw(field_names)
 
             # Choose value type and generate both string and expected value
-            value_type = draw(st.sampled_from(["string", "int", "float", "bool", "list"]))
+            value_type = draw(
+                st.sampled_from(["string", "int", "float", "bool", "list"])
+            )
 
             if value_type == "string":
                 py_value = draw(ini_string_values)
@@ -412,17 +448,24 @@ def config_string(draw):
                 py_value = draw(st.integers(min_value=-10000, max_value=10000))
                 ini_str = str(py_value)
             elif value_type == "float":
-                py_value = draw(st.floats(
-                    allow_nan=False, allow_infinity=False,
-                    min_value=-1000, max_value=1000
-                ))
+                py_value = draw(
+                    st.floats(
+                        allow_nan=False,
+                        allow_infinity=False,
+                        min_value=-1000,
+                        max_value=1000,
+                    )
+                )
                 ini_str = f"{py_value:.6g}"
             elif value_type == "bool":
                 py_value = draw(st.booleans())
                 ini_str = "true" if py_value else "false"
             else:  # list
                 list_len = draw(st.integers(min_value=0, max_value=3))
-                py_value = [draw(st.integers(min_value=-100, max_value=100)) for _ in range(list_len)]
+                py_value = [
+                    draw(st.integers(min_value=-100, max_value=100))
+                    for _ in range(list_len)
+                ]
                 ini_str = "[" + ", ".join(str(x) for x in py_value) + "]"
 
             fields.append(f"{field_name} = {ini_str}")
@@ -439,6 +482,7 @@ def config_string(draw):
 # =============================================================================
 # Tests
 # =============================================================================
+
 
 @given(section=config_section)
 @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
@@ -480,11 +524,13 @@ def test_list_value_roundtrip(items):
     assert_values_equal(parsed["section"]["field"], items)
 
 
-@given(mapping=st.dictionaries(
-    st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
-    scalar_values,
-    max_size=5,
-))
+@given(
+    mapping=st.dictionaries(
+        st.text(min_size=1, max_size=10, alphabet=DICT_KEY_ALPHABET),
+        scalar_values,
+        max_size=5,
+    )
+)
 @settings(max_examples=100)
 def test_dict_value_roundtrip(mapping):
     """Test that dict values (data, not sections) roundtrip correctly."""
@@ -512,6 +558,7 @@ def test_multiple_sections_roundtrip(section1, section2):
 # Nested Sections
 # =============================================================================
 
+
 @given(data=nested_config())
 @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
 def test_nested_sections_roundtrip(data):
@@ -533,8 +580,12 @@ def test_nested_sections_roundtrip(data):
 # Positional Args ([section.*.name] syntax)
 # =============================================================================
 
+
 @given(data=config_with_positional_args())
-@settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow, HealthCheck.large_base_example])
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.large_base_example],
+)
 def test_positional_args_roundtrip(data):
     """Test that [section.*.name] positional args syntax roundtrips correctly."""
     parent_name, positional_names, parent_fields, positional_contents, expected = data
@@ -566,6 +617,7 @@ def test_positional_args_roundtrip(data):
 # Variable Interpolation
 # =============================================================================
 
+
 @given(data=config_with_interpolation())
 @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
 def test_variable_interpolation(data):
@@ -589,6 +641,7 @@ def test_variable_interpolation(data):
 # =============================================================================
 # Config String Parsing (from INI format)
 # =============================================================================
+
 
 @given(data=config_string())
 @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
