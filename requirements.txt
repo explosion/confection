@@ -9,3 +9,4 @@ numpy>=1.15.0
 black>=25,<26
 flake8>=7,<8
 isort>=7,<8
+hypothesis
