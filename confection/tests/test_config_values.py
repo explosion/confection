@@ -9,6 +9,7 @@ from hypothesis import given, strategies as st, settings, example, HealthCheck
 from numpy.testing import assert_equal, assert_allclose
 from confection import Config
 from confection._config import try_load_json
+from confection.tests.util import my_registry
 
 
 # =============================================================================
@@ -680,3 +681,163 @@ def test_negative_numeric_string_stays_string(value):
     config_str = cfg.to_str()
     parsed = Config().from_str(config_str)
     assert parsed["section"]["field"] == value
+
+
+# =============================================================================
+# Registry Resolution Tests
+# =============================================================================
+# Tests for configs with @registry references that get resolved to values
+
+
+@st.composite
+def config_with_catsie(draw):
+    """Generate a config with a catsie.v1 registered function.
+
+    catsie.v1 signature: catsie_v1(evil: StrictBool, cute: bool = True) -> str
+    Returns "scratch!" if evil else "meow"
+    """
+    evil = draw(st.booleans())
+    cute = draw(st.booleans())
+
+    config = {
+        "cat": {
+            "@cats": "catsie.v1",
+            "evil": evil,
+            "cute": cute,
+        }
+    }
+
+    expected = "scratch!" if evil else "meow"
+    return config, expected
+
+
+@st.composite
+def config_with_catsie_v2(draw):
+    """Generate a config with a catsie.v2 registered function.
+
+    catsie.v2 signature: catsie_v2(evil: StrictBool, cute: bool = True, cute_level: int = 1) -> str
+    Returns "scratch!" if evil, "meow <3" if cute_level > 2, else "meow"
+    """
+    evil = draw(st.booleans())
+    cute = draw(st.booleans())
+    cute_level = draw(st.integers(min_value=0, max_value=5))
+
+    config = {
+        "cat": {
+            "@cats": "catsie.v2",
+            "evil": evil,
+            "cute": cute,
+            "cute_level": cute_level,
+        }
+    }
+
+    if evil:
+        expected = "scratch!"
+    elif cute_level > 2:
+        expected = "meow <3"
+    else:
+        expected = "meow"
+
+    return config, expected
+
+
+@given(data=config_with_catsie())
+@settings(max_examples=50)
+def test_registry_resolve_catsie_v1(data):
+    """Test that catsie.v1 configs resolve correctly."""
+    config, expected = data
+    cfg = Config(config)
+    resolved = my_registry.resolve(cfg)
+    assert resolved["cat"] == expected
+
+
+@given(data=config_with_catsie_v2())
+@settings(max_examples=50)
+def test_registry_resolve_catsie_v2(data):
+    """Test that catsie.v2 configs resolve correctly."""
+    config, expected = data
+    cfg = Config(config)
+    resolved = my_registry.resolve(cfg)
+    assert resolved["cat"] == expected
+
+
+@given(data=config_with_catsie())
+@settings(max_examples=50)
+def test_registry_roundtrip_with_resolve(data):
+    """Test that configs with registry refs survive roundtrip and resolve."""
+    config, expected = data
+    cfg = Config(config)
+
+    # Roundtrip through string
+    config_str = cfg.to_str()
+    parsed = Config().from_str(config_str)
+
+    # Resolve should produce same result
+    resolved = my_registry.resolve(parsed)
+    assert resolved["cat"] == expected
+
+
+@st.composite
+def multiple_registry_sections(draw):
+    """Generate a config with multiple sections containing registered functions.
+
+    Example structure:
+        [cat1]
+        @cats = "catsie.v1"
+        evil = false
+
+        [cat2]
+        @cats = "catsie.v2"
+        evil = true
+        cute_level = 3
+    """
+    cat1_evil = draw(st.booleans())
+    cat2_evil = draw(st.booleans())
+    cat2_cute_level = draw(st.integers(min_value=0, max_value=5))
+
+    config = {
+        "cat1": {
+            "@cats": "catsie.v1",
+            "evil": cat1_evil,
+        },
+        "cat2": {
+            "@cats": "catsie.v2",
+            "evil": cat2_evil,
+            "cute_level": cat2_cute_level,
+        },
+    }
+
+    cat1_expected = "scratch!" if cat1_evil else "meow"
+    if cat2_evil:
+        cat2_expected = "scratch!"
+    elif cat2_cute_level > 2:
+        cat2_expected = "meow <3"
+    else:
+        cat2_expected = "meow"
+
+    return config, cat1_expected, cat2_expected
+
+
+@given(data=multiple_registry_sections())
+@settings(max_examples=50)
+def test_multiple_registry_sections_resolve(data):
+    """Test that multiple sections with registered functions resolve correctly."""
+    config, cat1_expected, cat2_expected = data
+    cfg = Config(config)
+    resolved = my_registry.resolve(cfg)
+    assert resolved["cat1"] == cat1_expected
+    assert resolved["cat2"] == cat2_expected
+
+
+@given(evil=st.booleans(), cute=st.booleans())
+@settings(max_examples=20)
+def test_registry_fill_adds_defaults(evil, cute):
+    """Test that registry.fill() adds default values."""
+    # Config without 'cute' parameter (has default)
+    config = {"cat": {"@cats": "catsie.v1", "evil": evil}}
+    cfg = Config(config)
+    filled = my_registry.fill(cfg)
+
+    # Should have cute with default value
+    assert filled["cat"]["cute"] is True
+    assert filled["cat"]["evil"] == evil
