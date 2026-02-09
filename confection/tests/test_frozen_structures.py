@@ -52,13 +52,9 @@ def test_frozen_struct_deepcopy(frozen_type):
         return values
 
     cfg = Config()
-    resolved = registry.resolve(
-        cfg.from_str(
-            f"""
+    resolved = registry.resolve(cfg.from_str(f"""
             [something]
             @bar = "foo_{frozen_type}.v1"
-            """
-        )
-    )
+            """))
 
     assert isinstance(resolved["something"], Dict if frozen_type == "dict" else List)

@@ -113,15 +113,12 @@ def test_config_to_str():
 
 def test_config_to_str_creates_intermediate_blocks():
     cfg = Config({"optimizer": {"foo": {"bar": 1}}})
-    assert (
-        cfg.to_str().strip()
-        == """
+    assert cfg.to_str().strip() == """
 [optimizer]
 
 [optimizer.foo]
 bar = 1
     """.strip()
-    )
 
 
 def test_config_to_str_escapes():
@@ -326,8 +323,7 @@ def test_cant_expand_undefined_block(cfg, is_valid):
 
 def test_resolve_prefilled_values():
     class Language(object):
-        def __init__(self):
-            ...
+        def __init__(self): ...
 
     @my_registry.optimizers("prefilled.v1")
     def prefilled(nlp: Language, value: int = 10):

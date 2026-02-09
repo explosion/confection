@@ -396,9 +396,11 @@ def _filter_generators(config: Dict[str, Any]) -> Dict[str, Any]:
             result[key] = _filter_generators(value)
         elif isinstance(value, list):
             result[key] = [
-                _filter_generators(v)
-                if isinstance(v, dict)
-                else (None if _is_generator(v) else v)
+                (
+                    _filter_generators(v)
+                    if isinstance(v, dict)
+                    else (None if _is_generator(v) else v)
+                )
                 for v in value
             ]
         else:
