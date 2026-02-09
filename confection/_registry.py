@@ -1,11 +1,14 @@
 import copy
 import inspect
+import sys
 from dataclasses import dataclass
+from types import GeneratorType
 from typing import (
     Any,
     Callable,
     Dict,
     Generic,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -13,6 +16,8 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    get_args,
+    get_origin,
 )
 
 import catalogue
@@ -276,7 +281,7 @@ class registry:
                 fields[name] = cls._make_unresolved_schema(
                     field.annotation, config[name]
                 )
-            elif isinstance(config[name], dict):
+            elif _is_config_section(config[name]):
                 fields[name] = cls._make_unresolved_schema(
                     _make_dummy_schema(config[name]), config
                 )
@@ -307,7 +312,7 @@ class registry:
                     cls._make_unresolved_promise_schema(obj[name]),
                     Field(field_info.default),
                 )
-            elif name in obj and isinstance(obj[name], dict):
+            elif name in obj and _is_config_section(obj[name]):
                 fields[name] = (
                     cls._make_unresolved_schema(EmptySchema, obj[name]),
                     Field(field_info.default),
@@ -321,6 +326,13 @@ class registry:
         return create_model(
             f"{reg_name} {func_name} model", __config__=model_config, **fields
         )  # type: ignore
+
+
+def _is_config_section(obj) -> bool:
+    """Check if a dict is a config section (all string keys) vs a data value."""
+    if not isinstance(obj, dict):
+        return False
+    return all(isinstance(k, str) for k in obj.keys())
 
 
 def _make_dummy_schema(config):
@@ -359,11 +371,41 @@ def fill_config(
     return defaulted
 
 
+def _is_generator(obj: Any) -> bool:
+    """Check if an object is a generator or iterator that would be consumed by validation."""
+    return isinstance(obj, (GeneratorType, Iterator)) and not isinstance(obj, (str, bytes))
+
+
+def _filter_generators(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively filter out generators from config for validation.
+
+    Generators can't be validated without consuming them, which doesn't work
+    for infinite generators (like schedules). So we replace them with a
+    placeholder before validation.
+    """
+    result = {}
+    for key, value in config.items():
+        if _is_generator(value):
+            # Skip generators - they can't be validated without consuming
+            result[key] = None
+        elif isinstance(value, dict):
+            result[key] = _filter_generators(value)
+        elif isinstance(value, list):
+            result[key] = [
+                _filter_generators(v) if isinstance(v, dict)
+                else (None if _is_generator(v) else v)
+                for v in value
+            ]
+        else:
+            result[key] = value
+    return result
+
+
 def validate_resolved(config, schema: Type[BaseModel]):
     # If value is a generator we can't validate type without
     # consuming it (which doesn't work if it's infinite – see
     # schedule for examples). So we skip it.
-    config = dict(config)
+    config = _filter_generators(dict(config))
     try:
         _ = schema.model_validate(config)
     except ValidationError as e:
@@ -387,7 +429,7 @@ def fill_defaults(
             schema = registry.make_promise_schema(value, resolve=False)
             value = fill_defaults(registry, value, schema=schema)
             output[key] = value
-        elif isinstance(value, dict):
+        elif _is_config_section(value):
             output[key] = fill_defaults(registry, value, EmptySchema)
     return output
 
@@ -471,12 +513,44 @@ def fix_positionals(config):
         return config
 
 
+def _deep_copy_with_uncopyable(obj: Any, memo: Optional[Dict[int, Any]] = None) -> Any:
+    """Deep copy that passes through objects that can't be copied (like generators)."""
+    if memo is None:
+        memo = {}
+
+    obj_id = id(obj)
+    if obj_id in memo:
+        return memo[obj_id]
+
+    if isinstance(obj, dict):
+        result = {}
+        memo[obj_id] = result
+        for k, v in obj.items():
+            result[_deep_copy_with_uncopyable(k, memo)] = _deep_copy_with_uncopyable(v, memo)
+        return result
+    elif isinstance(obj, list):
+        result = []
+        memo[obj_id] = result
+        for item in obj:
+            result.append(_deep_copy_with_uncopyable(item, memo))
+        return result
+    elif isinstance(obj, tuple):
+        # Tuples are immutable, but we still need to copy their contents
+        return tuple(_deep_copy_with_uncopyable(item, memo) for item in obj)
+    else:
+        try:
+            return copy.deepcopy(obj, memo)
+        except TypeError:
+            # Object can't be deep copied (e.g., generator), return as-is
+            return obj
+
+
 def apply_overrides(
     config: Dict[str, Dict[str, Any]],
     overrides: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
     """Build first representation of the config:"""
-    output = copy.deepcopy(config)
+    output = _deep_copy_with_uncopyable(config)
     for key, value in overrides.items():
         path = key.split(".")
         err_title = "Error parsing config overrides"
@@ -500,24 +574,139 @@ def make_func_schema(func) -> Type[BaseModel]:
         "arbitrary_types_allowed": True,
         "alias_generator": alias_generator,
     }
-    return create_model("ArgModel", __config__=model_config, **fields)  # type: ignore
+    model = create_model("ArgModel", __config__=model_config, **fields)  # type: ignore
+
+    # Resolve forward references using the function's module namespace
+    # This is needed for Pydantic v2 when annotations are stored as strings
+    # (e.g., in Cython modules) or use types like Mapping that need resolution
+    func_module = sys.modules.get(func.__module__, None)
+    if func_module is not None:
+        try:
+            model.model_rebuild(_types_namespace=vars(func_module))
+        except Exception:
+            pass  # If rebuild fails, validation will catch it later
+
+    return model
+
+
+def _is_iterable_type(annotation: Any) -> bool:
+    """Check if annotation is an iterator/generator type (non-consuming iterable)."""
+    import collections.abc
+
+    origin = get_origin(annotation) or annotation
+    try:
+        if isinstance(origin, type) and issubclass(
+            origin, (collections.abc.Iterator, collections.abc.Generator)
+        ):
+            return True
+    except TypeError:
+        pass
+    return False
+
+
+def _is_sequence_type(annotation: Any) -> bool:
+    """Check if annotation is a sequence type (consuming iterable like List)."""
+    import collections.abc
+
+    origin = get_origin(annotation) or annotation
+    try:
+        if isinstance(origin, type) and issubclass(origin, collections.abc.Sequence):
+            # str and bytes are sequences but don't consume iterators
+            if origin in (str, bytes):
+                return False
+            return True
+    except TypeError:
+        pass
+    return False
+
+
+def _reorder_union_for_generators(annotation: Any) -> Any:
+    """Reorder Union types so iterators come before sequences.
+
+    Pydantic validates Union types in order. If a Sequence type (like List)
+    comes before an Iterator/Generator type, the generator gets consumed
+    when Pydantic tries to convert it to a list. By putting iterator types
+    first, they match before any consumption occurs.
+    """
+    origin = get_origin(annotation)
+    if origin is not Union:
+        return annotation
+
+    args = get_args(annotation)
+    iterables = [a for a in args if _is_iterable_type(a)]
+    sequences = [a for a in args if _is_sequence_type(a)]
+
+    # Only reorder if we have both iterables and sequences
+    if not iterables or not sequences:
+        return annotation
+
+    # Put iterables first, then everything else in original order
+    others = [a for a in args if a not in iterables]
+    reordered = tuple(iterables) + tuple(others)
+
+    return Union[reordered]  # type: ignore
+
+
+def process_param_annotation(annotation: Any) -> Any:
+    """Process a parameter annotation for use in a Pydantic schema.
+
+    - Returns Any if annotation is empty/missing
+    - Reorders Union types so generators/iterators come before sequences
+    """
+    if annotation is inspect.Parameter.empty:
+        return Any
+    return _reorder_union_for_generators(annotation)
+
+
+def process_param_default(default: Any) -> Any:
+    """Process a parameter default value for use in a Pydantic schema.
+
+    - Returns ... (Ellipsis) if no default, indicating required field
+    - Returns the default value otherwise
+    """
+    if default is inspect.Parameter.empty:
+        return ...
+    return default
+
+
+def get_param_field(
+    name: str,
+    annotation: Any,
+    default: Any,
+    kind: inspect._ParameterKind,
+) -> Tuple[str, Tuple[Type, FieldInfo]]:
+    """Convert a single parameter into a Pydantic field definition.
+
+    Args:
+        name: The parameter name
+        annotation: The type annotation (or inspect.Parameter.empty)
+        default: The default value (or inspect.Parameter.empty)
+        kind: The parameter kind (POSITIONAL_ONLY, VAR_POSITIONAL, etc.)
+
+    Returns:
+        Tuple of (field_name, (annotation, FieldInfo))
+    """
+    processed_annotation = process_param_annotation(annotation)
+    processed_default = process_param_default(default)
+
+    # Handle spread arguments (*args) - wrap annotation in Sequence
+    if kind == inspect.Parameter.VAR_POSITIONAL:
+        spread_annot = Sequence[processed_annotation]  # type: ignore
+        return (ARGS_FIELD_ALIAS, (spread_annot, Field(processed_default)))
+
+    # Handle reserved field names that would shadow Pydantic attributes
+    field_name = RESERVED_FIELDS.get(name, name)
+    return (field_name, (processed_annotation, Field(processed_default)))
 
 
 def get_func_fields(func) -> Dict[str, Tuple[Type, FieldInfo]]:
-    # Read the argument annotations and defaults from the function signature
+    """Extract Pydantic field definitions from a function signature."""
     sig_args = {}
     for param in inspect.signature(func).parameters.values():
-        # If no annotation is specified assume it's anything
-        annotation = param.annotation if param.annotation != param.empty else Any
-        # If no default value is specified assume that it's required
-        default = param.default if param.default != param.empty else ...
-        # Handle spread arguments and use their annotation as Sequence[whatever]
-        if param.kind == param.VAR_POSITIONAL:
-            spread_annot = Sequence[annotation]  # type: ignore
-            sig_args[ARGS_FIELD_ALIAS] = (spread_annot, Field(default))
-        else:
-            name = RESERVED_FIELDS.get(param.name, param.name)
-            sig_args[name] = (annotation, Field(default))
+        field_name, field_def = get_param_field(
+            param.name, param.annotation, param.default, param.kind
+        )
+        sig_args[field_name] = field_def
     return sig_args
 
 
