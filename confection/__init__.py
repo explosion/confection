@@ -7,7 +7,6 @@ from pydantic.fields import Field as ModelField
 from ._config import (  # noqa: F401
     ARGS_FIELD,
     ARGS_FIELD_ALIAS,
-    JSON_EXCEPTIONS,
     RESERVED_FIELDS,
     SECTION_PREFIX,
     VARIABLE_RE,

@@ -36,36 +36,41 @@ RESERVED_FIELDS = {
 RESERVED_FIELDS_REVERSE = {v: k for k, v in RESERVED_FIELDS.items()}
 # Internal prefix used to mark section references for custom interpolation
 SECTION_PREFIX = "__SECTION__:"
-# Values that shouldn't be loaded during interpolation because it'd cause
-# even explicit string values to be incorrectly parsed as bools/None etc.
-JSON_EXCEPTIONS = ("true", "false", "null")
 # Regex to detect whether a value contains a variable
 VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 
 
 class CustomInterpolation(ExtendedInterpolation):
     def before_read(self, parser, section, option, value):
-        # If we're dealing with a quoted string as the interpolation value,
-        # make sure we load and unquote it so we don't end up with '"value"'
-        try:
-            json_value = srsly.json_loads(value)
-            if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
-                value = json_value
-        except ValueError:
-            if value and value[0] == value[-1] == "'":
-                warnings.warn(
-                    f"The value [{value}] seems to be single-quoted, but values "
-                    "use JSON formatting, which requires double quotes."
-                )
-        except Exception:
-            pass
+        # Warn about single-quoted strings (common mistake)
+        if value and value[0] == value[-1] == "'":
+            warnings.warn(
+                f"The value [{value}] seems to be single-quoted, but values "
+                "use JSON formatting, which requires double quotes."
+            )
         return super().before_read(parser, section, option, value)
+
+    def _coerce_for_string_context(self, v: str) -> str:
+        """Coerce a raw config value for use in a compound string expression."""
+        import json
+        # Don't coerce section references - they need to stay quoted for JSON
+        if SECTION_PREFIX in v:
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            return v  # Not valid JSON, already a plain string
+        return str(parsed)
 
     def before_get(self, parser, section, option, value, defaults):
         # Mostly copy-pasted from the built-in configparser implementation.
         L = []
         self.interpolate(parser, option, L, value, section, defaults, 1)
-        return "".join(L)
+        if len(L) == 1:
+            # Bare reference - keep as-is for _interpret_value to handle
+            return L[0]
+        # Compound expression - coerce pieces for string concatenation
+        return "".join(self._coerce_for_string_context(piece) for piece in L)
 
     def interpolate(self, parser, option, accum, rest, section, map, depth):
         # Mostly copy-pasted from the built-in configparser implementation.
@@ -291,8 +296,8 @@ class Config(dict):
         """Get a single section reference."""
         if isinstance(value, str) and value.startswith(f'"{SECTION_PREFIX}'):
             value = try_load_json(value)
-        if isinstance(value, str) and value.startswith(SECTION_PREFIX):
-            parts = value.replace(SECTION_PREFIX, "").split(".")
+        if isinstance(value, str) and value.startswith(SECTION_PREFIX) and value != SECTION_PREFIX:
+            parts = value.replace(SECTION_PREFIX, "", 1).split(".")
             result = self
             for item in parts:
                 try:
@@ -305,7 +310,7 @@ class Config(dict):
                         config=self, errors=err, title=err_title
                     ) from None
             return result
-        elif isinstance(value, str) and SECTION_PREFIX in value:
+        elif isinstance(value, str) and SECTION_PREFIX in value and value != SECTION_PREFIX:
             # String value references a section (either a dict or return
             # value of promise). We can't allow this, since variables are
             # always interpolated *before* configs are resolved.
@@ -505,14 +510,8 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
     # to preserve ${x:y} vs. "${x:y}"
     if isinstance(value, str) and VARIABLE_RE.search(value):
         return value
-    if isinstance(value, str) and value.replace(".", "", 1).isdigit():
-        # Work around values that are strings but numbers
-        value = f'"{value}"'
     try:
         value = srsly.json_dumps(value)
-        value = re.sub(r"\$([^{])", "$$\1", value)
-        value = re.sub(r"\$$", "$$", value)
-        return value
     except Exception as e:
         err_msg = (
             f"Couldn't serialize config value of type {type(value)}: {e}. Make "
@@ -521,6 +520,8 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
             f"the object instead."
         )
         raise ConfigValidationError(config=data, desc=err_msg) from e
+    # Escape $ to $$ for configparser, but preserve ${...} variable references
+    return re.sub(r"\$(?!\{)", "$$", value)
 
 
 def deep_merge_configs(
