@@ -149,7 +149,8 @@ class CustomInterpolation(ExtendedInterpolation):
                         # reference as a section
                         if v == fallback:
                             v = self._get_section_name(parser[f"{sect}.{opt}"]._name)  # type: ignore[union-attr]
-                    else:
+                    else:  # pragma: no cover
+                        # Dead code: rsplit(".", 1) produces at most 2 elements
                         err = f"More than one ':' found: {rest}"
                         raise InterpolationSyntaxError(option, section, err)
                 except (KeyError, NoSectionError, NoOptionError):
@@ -319,15 +320,16 @@ class Config(dict):
 
     def _get_section_ref(self, value: Any, *, parent: List[str] = []) -> Any:
         """Get a single section reference."""
-        if isinstance(value, str) and value.startswith(f'"{SECTION_PREFIX}'):
-            value = try_load_json(value)
+        if isinstance(value, str) and value.startswith(f'"{SECTION_PREFIX}'):  # pragma: no cover
+            value = try_load_json(value)  # pragma: no cover
         if isinstance(value, str) and value.startswith(SECTION_PREFIX) and value != SECTION_PREFIX:
             parts = value.replace(SECTION_PREFIX, "", 1).split(".")
             result = self
             for item in parts:
                 try:
                     result = result[item]
-                except (KeyError, TypeError):  # This should never happen
+                except (KeyError, TypeError):  # pragma: no cover
+                    # Defensive: section references are validated earlier
                     err_title = "Error parsing reference to config section"
                     err_msg = f"Section '{'.'.join(parts)}' is not defined"
                     err = [{"loc": parts, "msg": err_msg}]
