@@ -5,7 +5,12 @@ continue passing pydantic BaseModel subclasses to registry.resolve()
 and registry.fill() even though confection no longer depends on pydantic.
 """
 
+import sys
+
 import pytest
+
+if sys.version_info >= (3, 14):
+    pytest.skip("pydantic v1 is not compatible with Python 3.14+", allow_module_level=True)
 
 pydantic = pytest.importorskip("pydantic")
 
