@@ -58,6 +58,8 @@ VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 
 
 class CustomInterpolation(ExtendedInterpolation):
+    _KEYCRE: re.Pattern
+
     def before_read(self, parser, section, option, value):
         # Warn about single-quoted strings (common mistake)
         if value and value[0] == value[-1] == "'":
@@ -179,7 +181,7 @@ class CustomInterpolation(ExtendedInterpolation):
         return f'"{SECTION_PREFIX}{name}"'
 
 
-def get_configparser(interpolate: bool = True):
+def get_configparser(interpolate: bool = True) -> ConfigParser:
     config = ConfigParser(interpolation=CustomInterpolation() if interpolate else None)
     # Preserve case of keys: https://stackoverflow.com/a/1611877/6400719
     config.optionxform = str  # type: ignore
@@ -194,6 +196,8 @@ class Config(dict):
     """
 
     is_interpolated: bool
+    section_order: list[str]
+    _sections: dict
 
     def __init__(
         self,
@@ -245,6 +249,7 @@ class Config(dict):
         # Sort sections by depth, so that we can iterate breadth-first. This
         # allows us to check that we're not expanding an undefined block.
         get_depth = lambda item: len(item[0].split("."))
+        part = ""
         for section, values in sorted(config.items(), key=get_depth):
             if section == "DEFAULT":
                 # Skip [DEFAULT] section so it doesn't cause validation error
@@ -431,7 +436,7 @@ class Config(dict):
         except ParsingError as e:
             desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
             raise ConfigValidationError(desc=desc) from None
-        config._sections = self._sort(config._sections)
+        config._sections = self._sort(config._sections) # type: ignore
         self._set_overrides(config, overrides)
         self.clear()
         self.interpret_config(config)
@@ -464,7 +469,7 @@ class Config(dict):
                 else:
                     flattened.set(section_name, key, try_dump_json(value, node))
         # Order so subsection follow parent (not all sections, then all subs etc.)
-        flattened._sections = self._sort(flattened._sections)
+        flattened._sections = self._sort(flattened._sections) # type: ignore
         self._validate_sections(flattened)
         string_io = io.StringIO()
         flattened.write(string_io)
