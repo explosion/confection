@@ -31,6 +31,7 @@ from typing import (
     Type,
     Union,
     cast,
+    get_type_hints,
 )
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
@@ -134,10 +135,22 @@ class CustomInterpolation(ExtendedInterpolation):
                 try:
                     if len(path) == 1:
                         opt = parser.optionxform(path[0])
-                        if opt in map:
+                        # Check if the variable references a section rather
+                        # than a key in the current section.  If the key
+                        # exists in the current map but its raw value is the
+                        # same interpolation variable (self-reference), or if
+                        # the key doesn't exist in the map, treat it as a
+                        # section reference.
+                        is_section_ref = opt not in map
+                        if not is_section_ref:
+                            raw = map[opt]
+                            is_section_ref = (
+                                isinstance(raw, str) and f"${{{orig_var}}}" in raw
+                            )
+                        if not is_section_ref:
                             v = map[opt]
                         else:
-                            # We have block reference, store it as a special key
+                            # Block reference — store as a special key
                             section_name = parser[parser.optionxform(path[0])]._name
                             v = self._get_section_name(section_name)
                     elif len(path) == 2:
@@ -453,10 +466,14 @@ class Config(dict):
         for path, node in queue:
             section_name = ".".join(path)
             is_kwarg = path and path[-1] != "*"
-            if is_kwarg and not flattened.has_section(section_name):
-                # Always create sections for non-'*' sections, not only if
-                # they have leaf entries, as we don't want to expand
-                # blocks that are undefined
+            has_leaves = any(not hasattr(v, "items") for v in node.values())
+            if path and has_leaves and not flattened.has_section(section_name):
+                # Create sections that have leaf values (including * sections).
+                # Skip empty sections whose children are all sub-sections.
+                flattened.add_section(section_name)
+            elif is_kwarg and not flattened.has_section(section_name):
+                # Always create non-* sections even if empty, so we don't
+                # expand blocks that are undefined.
                 flattened.add_section(section_name)
             for key, value in node.items():
                 if hasattr(value, "items"):
@@ -747,6 +764,32 @@ def _contains_promise(obj):
     return False
 
 
+def _coerce_basemodel_args(func, kwargs):
+    """Coerce dict kwargs to BaseModel instances where the function signature
+    expects a BaseModel subclass.  This lets registered functions receive
+    constructed model instances instead of raw dicts (issue #58).
+    """
+    try:
+        hints = get_type_hints(func)
+    except Exception:
+        return kwargs
+    result = dict(kwargs)
+    for name, value in result.items():
+        if not isinstance(value, dict) or name not in hints:
+            continue
+        annotation = hints[name]
+        # Check if annotation is a class with __fields__ (pydantic v1)
+        # or model_fields (pydantic v2 / our Schema)
+        if isinstance(annotation, type) and (
+            hasattr(annotation, "__fields__") or hasattr(annotation, "model_fields")
+        ):
+            try:
+                result[name] = annotation(**value)
+            except Exception:
+                pass  # if construction fails, leave as dict
+    return result
+
+
 class EmptySchema(Schema):
     model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
@@ -909,6 +952,9 @@ class registry:
                     # just create an instance of the type here, since this
                     # wouldn't work for generics / more complex custom types
                     getter = cls.get(reg_name, func_name)
+                    # Coerce dict values to BaseModel instances where the
+                    # function annotation expects one (fixes #58).
+                    kwargs = _coerce_basemodel_args(getter, kwargs)
                     # We don't want to try/except this and raise our own error
                     # here, because we want the traceback if the function fails.
                     getter_result = getter(*args, **kwargs)
