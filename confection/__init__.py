@@ -693,21 +693,36 @@ def alias_generator(name: str) -> str:
 
 
 def _override_field_to_any(schema, field_name):
-    """Override a field's type to Any in a schema, so validation accepts
-    any value for that field (used for unresolved promises).
+    """Return a copy of the schema with one field's type set to Any.
 
-    Once a field is overridden, pydantic-delegating model_validate can't be
-    used (the original pydantic model still has the old type).  Mark the
-    schema so it falls back to our own validation.
+    Creates a new schema class so the original (possibly cached) schema
+    is not mutated.  The copy always uses our own model_validate (not
+    pydantic delegation) since the field types no longer match.
     """
-    if field_name in schema.model_fields:
-        field = schema.model_fields[field_name]
-        new_field = FieldInfo(default=field.default, alias=field.alias)
-        new_field.annotation = Any
-        schema.model_fields[field_name] = new_field
-        # After mutation, pydantic delegation is stale — use our own validation
-        schema.model_validate = classmethod(Schema.model_validate.__func__)
-    return schema
+    if field_name not in schema.model_fields:
+        return schema
+    # Build a new schema with the overridden field
+    new_fields = {}
+    for name, field in schema.model_fields.items():
+        if name == field_name:
+            new_field = FieldInfo(default=field.default, alias=field.alias)
+            new_field.annotation = Any
+            new_fields[name] = new_field
+        else:
+            new_fields[name] = field
+    new_schema = type(schema.__name__ + "_any", (Schema,), {})
+    new_schema.model_fields = new_fields
+    new_schema.model_config = schema.model_config
+    return new_schema
+
+
+def _contains_promise(obj):
+    """Check if a config dict contains any promise references (nested)."""
+    if isinstance(obj, dict):
+        if any(k.startswith("@") for k in obj if isinstance(k, str)):
+            return True
+        return any(_contains_promise(v) for v in obj.values())
+    return False
 
 
 class EmptySchema(Schema):
@@ -896,6 +911,11 @@ class registry:
                     if not hasattr(field_type, "model_fields"):
                         # If we don't have a schema and just a type
                         field_type = EmptySchema
+                    if not resolve and _contains_promise(value):
+                        # If we're not resolving and the value contains nested
+                        # promises, override the field to Any so validation
+                        # doesn't reject Promise objects in typed containers
+                        schema = _override_field_to_any(schema, key)
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
                     field_type,
