@@ -383,18 +383,73 @@ def _validate_plain_type(value, typ):
         # let downstream validators (pydantic) enforce the constraint.
         if issubclass(typ, type(value)):
             return None
-        # Types that declare custom validation via pydantic's protocol
-        # (e.g. thinc's Floats2d with __get_pydantic_core_schema__) own
-        # their own validation logic.  Accept the value here — the type's
-        # validator will run when the function is actually called.
-        if hasattr(typ, "__get_pydantic_core_schema__") or hasattr(
-            typ, "__get_validators__"
-        ):
-            return None
+        # Types that declare custom validation via pydantic's schema protocol
+        # (e.g. thinc's Floats2d).  Extract and call the validator directly
+        # — the hook returns a plain dict, no pydantic import needed.
+        if hasattr(typ, "__get_pydantic_core_schema__"):
+            return _call_pydantic_schema_validator(typ, value)
+        # pydantic v1 protocol: __get_validators__ yields single-arg
+        # validator functions.
+        if hasattr(typ, "__get_validators__"):
+            return _call_pydantic_v1_validators(typ, value)
     except TypeError:
         return None
 
     return f"Input should be an instance of {getattr(typ, '__name__', str(typ))}"
+
+
+class _AnySchemaHandler:
+    """Minimal stand-in for pydantic's GetCoreSchemaHandler.
+
+    Passed to __get_pydantic_core_schema__ so we can extract the
+    validator function without importing pydantic.  The handler is
+    only called as ``handler(source_type)`` and must return a core
+    schema dict — ``{"type": "any"}`` tells pydantic "accept anything"
+    which is the right inner schema for a plain validator.
+    """
+
+    def __call__(self, _source_type):
+        return {"type": "any"}
+
+
+def _call_pydantic_schema_validator(typ, value):
+    """Call the validator from a type's __get_pydantic_core_schema__ hook.
+
+    The hook returns a plain dict describing the schema.  We extract the
+    validator function and call it directly — no pydantic import needed.
+    Returns None on success, or an error message string on failure.
+    """
+    schema = typ.__get_pydantic_core_schema__(typ, _AnySchemaHandler())
+    # Navigate the schema dict to find the validator function.
+    # Typical shapes:
+    #   {"type": "function-after", "function": {"type": "no-info", "function": <fn>}, ...}
+    #   {"type": "function-plain", "function": {"type": "no-info", "function": <fn>}}
+    fn_entry = schema.get("function", {})
+    if isinstance(fn_entry, dict):
+        validator = fn_entry.get("function")
+    else:
+        return None  # unrecognised shape — can't extract validator
+    if not callable(validator):
+        return None
+    try:
+        validator(value)
+    except (ValueError, TypeError, AssertionError) as e:
+        return str(e)
+    return None
+
+
+def _call_pydantic_v1_validators(typ, value):
+    """Call validators from a type's __get_validators__ hook (pydantic v1).
+
+    The hook yields single-argument validator functions.
+    Returns None on success, or an error message string on failure.
+    """
+    for validator in typ.__get_validators__():
+        try:
+            value = validator(value)
+        except (ValueError, TypeError, AssertionError) as e:
+            return str(e)
+    return None
 
 
 def _validate_generic(value, origin, args):
