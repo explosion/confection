@@ -436,7 +436,7 @@ class Config(dict):
         except ParsingError as e:
             desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
             raise ConfigValidationError(desc=desc) from None
-        config._sections = self._sort(config._sections) # type: ignore
+        config._sections = self._sort(config._sections)  # type: ignore
         self._set_overrides(config, overrides)
         self.clear()
         self.interpret_config(config)
@@ -469,7 +469,7 @@ class Config(dict):
                 else:
                     flattened.set(section_name, key, try_dump_json(value, node))
         # Order so subsection follow parent (not all sections, then all subs etc.)
-        flattened._sections = self._sort(flattened._sections) # type: ignore
+        flattened._sections = self._sort(flattened._sections)  # type: ignore
         self._validate_sections(flattened)
         string_io = io.StringIO()
         flattened.write(string_io)
