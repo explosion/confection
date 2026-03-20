@@ -54,34 +54,47 @@ ARGS_FIELD_ALIAS = "VARIABLE_POSITIONAL_ARGS"
 RESERVED_FIELDS = {"validate": "validate\u0020"}
 # Internal prefix used to mark section references for custom interpolation
 SECTION_PREFIX = "__SECTION__:"
-# Values that shouldn't be loaded during interpolation because it'd cause
-# even explicit string values to be incorrectly parsed as bools/None etc.
-JSON_EXCEPTIONS = ("true", "false", "null")
 # Regex to detect whether a value contains a variable
 VARIABLE_RE = re.compile(r"\$\{[\w\.:]+\}")
 
 
 class CustomInterpolation(ExtendedInterpolation):
     def before_read(self, parser, section, option, value):
-        # If we're dealing with a quoted string as the interpolation value,
-        # make sure we load and unquote it so we don't end up with '"value"'
-        try:
-            json_value = _json.loads(value)
-            if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
-                value = json_value
-        except (ValueError, TypeError):
-            if value and value[0] == value[-1] == "'":
-                warnings.warn(
-                    f"The value [{value}] seems to be single-quoted, but values "
-                    "use JSON formatting, which requires double quotes."
-                )
+        # Warn about single-quoted strings (common mistake)
+        if value and value[0] == value[-1] == "'":
+            warnings.warn(
+                f"The value [{value}] seems to be single-quoted, but values "
+                "use JSON formatting, which requires double quotes."
+            )
         return super().before_read(parser, section, option, value)
+
+    def _coerce_for_string_context(self, v):
+        """Coerce a raw config value for use in a compound string expression."""
+        # Don't coerce section references - they need to stay quoted for JSON
+        if SECTION_PREFIX in v:
+            return v
+        try:
+            parsed = _json.loads(v)
+        except (ValueError, TypeError):
+            return v  # Not valid JSON, already a plain string
+        if isinstance(parsed, str):
+            return parsed  # Unwrap JSON string
+        # Use json.dumps() for non-strings, escaping inner quotes so they don't
+        # conflict with the outer JSON string quotes
+        return _json.dumps(parsed).replace('"', '\\"')
 
     def before_get(self, parser, section, option, value, defaults):
         # Mostly copy-pasted from the built-in configparser implementation.
+        # The interpolate() method resolves ${...} references and appends pieces
+        # to L. For a bare reference like ${x}, L has one element. For compound
+        # expressions like "hello ${x}", L has multiple pieces that we join.
+        # Compound results stay as strings (coerced via _coerce_for_string_context),
+        # while bare references keep their JSON type for _interpret_value to parse.
         L = []
         self.interpolate(parser, option, L, value, section, defaults, 1)
-        return "".join(L)
+        if len(L) == 1:
+            return L[0]
+        return "".join(self._coerce_for_string_context(piece) for piece in L)
 
     def interpolate(self, parser, option, accum, rest, section, map, depth):
         # Mostly copy-pasted from the built-in configparser implementation.
@@ -304,13 +317,17 @@ class Config(dict):
         """Get a single section reference."""
         if isinstance(value, str) and value.startswith(f'"{SECTION_PREFIX}'):
             value = try_load_json(value)
-        if isinstance(value, str) and value.startswith(SECTION_PREFIX):
-            parts = value.replace(SECTION_PREFIX, "").split(".")
+        if (
+            isinstance(value, str)
+            and value.startswith(SECTION_PREFIX)
+            and value != SECTION_PREFIX
+        ):
+            parts = value.replace(SECTION_PREFIX, "", 1).split(".")
             result = self
             for item in parts:
                 try:
                     result = result[item]
-                except (KeyError, TypeError):  # This should never happen
+                except (KeyError, TypeError):
                     err_title = "Error parsing reference to config section"
                     err_msg = f"Section '{'.'.join(parts)}' is not defined"
                     err = [{"loc": parts, "msg": err_msg}]
@@ -318,7 +335,11 @@ class Config(dict):
                         config=self, errors=err, title=err_title
                     ) from None
             return result
-        elif isinstance(value, str) and SECTION_PREFIX in value:
+        elif (
+            isinstance(value, str)
+            and SECTION_PREFIX in value
+            and value != SECTION_PREFIX
+        ):
             # String value references a section (either a dict or return
             # value of promise). We can't allow this, since variables are
             # always interpolated *before* configs are resolved.
@@ -517,9 +538,6 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
     # to preserve ${x:y} vs. "${x:y}"
     if isinstance(value, str) and VARIABLE_RE.search(value):
         return value
-    if isinstance(value, str) and value.replace(".", "", 1).isdigit():
-        # Work around values that are strings but numbers
-        value = f'"{value}"'
     try:
         value = _json.dumps(value, separators=(",", ":"))
         # Escape $ to $$ for configparser, but preserve ${...} variable references
