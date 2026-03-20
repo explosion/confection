@@ -24,16 +24,14 @@ from typing import (
 import pytest
 
 from confection.validation import (
-    Schema,
-    ValidationError,
-    create_schema,
-    validate_type,
     Field,
     FieldInfo,
+    Schema,
     _validate_schema,
+    create_schema,
     ensure_schema,
+    validate_type,
 )
-
 
 # === None ===
 
