@@ -3,9 +3,8 @@
 Uses property-based testing to explore the space of possible config values.
 """
 
-from configparser import ConfigParser, ExtendedInterpolation
-
 import json
+from configparser import ConfigParser, ExtendedInterpolation
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -19,8 +18,8 @@ def _json_dumps(value):
     return json.dumps(value, separators=(",", ":"))
 
 
-from confection.validation import Schema, ValidationError
 from confection.tests.util import my_registry
+from confection.validation import Schema, ValidationError
 
 # =============================================================================
 # Unit tests for try_load_json - the core parsing function

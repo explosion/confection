@@ -11,7 +11,7 @@ try:
     from pydantic.v1 import BaseModel, PositiveInt, StrictFloat, constr
     from pydantic.v1.types import StrictBool
 except ImportError:
-    from pydantic import BaseModel, StrictFloat, PositiveInt, constr  # type: ignore
+    from pydantic import BaseModel, PositiveInt, StrictFloat, constr  # type: ignore
     from pydantic.types import StrictBool  # type: ignore
 
 from confection import Config, ConfigValidationError
@@ -309,7 +309,7 @@ def test_config_to_str_escapes():
     # roundtrip through str
     cfg_str = cfg.to_str()
     assert "^a$$" in cfg_str
-    new_cfg = Config().from_str(cfg_str)
+    Config().from_str(cfg_str)
     assert cfg == section_dict
 
 
@@ -1386,7 +1386,7 @@ def test_config_interpolates(greeting, value, expected):
     """
     overrides = {"vars.a": greeting}
     cfg = Config().from_str(str_cfg, overrides=overrides)
-    assert type(cfg["project"]["my_par"]) == expected
+    assert type(cfg["project"]["my_par"]) is expected
 
 
 @pytest.mark.parametrize(

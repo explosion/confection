@@ -4,5 +4,12 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
-[tool.isort]
-profile = "black"
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E203", "E501", "E402", "E731"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["confection"]

@@ -1,6 +1,7 @@
 import copy
 import inspect
 import io
+import json as _json
 import re
 import warnings
 from configparser import (
@@ -32,17 +33,15 @@ from typing import (
     cast,
 )
 
-import json as _json
-
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
 from .validation import (
+    Field,
+    FieldInfo,
     Schema,
     ValidationError,
-    FieldInfo,
-    Field,
     create_schema,
     ensure_schema,
-    validate_type,
+    validate_type,  # noqa: F401 — public API
 )
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
@@ -965,7 +964,7 @@ class registry:
         exclude = []
         if validate:
             try:
-                result = schema.model_validate(validation)
+                schema.model_validate(validation)
             except ValidationError as e:
                 raise ConfigValidationError(
                     config=config, errors=e.errors(), parent=parent

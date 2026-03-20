@@ -21,7 +21,6 @@ from typing import (
     get_type_hints,
 )
 
-
 # === Constrained Types ===
 
 
@@ -424,7 +423,7 @@ def _validate_plain_type(value, typ):
     if issubclass(typ, PurePath):
         if isinstance(value, (str, PurePath)):
             return None
-        return f"Input should be a valid path"
+        return "Input should be a valid path"
 
     # Custom class - isinstance check
     try:

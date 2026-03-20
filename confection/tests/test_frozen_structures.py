@@ -55,7 +55,7 @@ def test_frozen_struct_deepcopy(frozen_type):
         cfg.from_str(
             f"""
             [something]
-            @bar = "foo_{frozen_type}.v1"        
+            @bar = "foo_{frozen_type}.v1"
             """
         )
     )

@@ -13,7 +13,6 @@ try:
     from pydantic.v1 import (
         BaseModel,
         Field,
-        StrictBool,
         StrictFloat,
         StrictInt,
         StrictStr,
@@ -23,7 +22,6 @@ except ImportError:
     from pydantic import (  # type: ignore
         BaseModel,
         Field,
-        StrictBool,
         StrictFloat,
         StrictInt,
         StrictStr,
@@ -31,9 +29,8 @@ except ImportError:
     )
 
 from confection import ConfigValidationError
-from confection.validation import Schema, ValidationError, ensure_schema
 from confection.tests.util import my_registry
-
+from confection.validation import Schema, ValidationError, ensure_schema
 
 # --- ensure_schema conversion ---
 
