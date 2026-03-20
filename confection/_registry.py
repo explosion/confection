@@ -284,8 +284,9 @@ class registry:
                 fields[name] = (nested, Field(...))
             else:
                 fields[name] = (field.annotation, Field(...))
+        extra = schema.model_config.get("extra", "forbid")
         return create_schema(
-            "UnresolvedConfig", __config__={"extra": "forbid"}, **fields
+            "UnresolvedConfig", __config__={"extra": extra}, **fields
         )
 
     @classmethod
@@ -432,8 +433,7 @@ def remove_extra_keys(
     """Remove keys from the config that aren't in the schema.
     This is used when validate=False
     """
-    if schema.model_config.get("extra") == "allow":
-        return dict(config)
+    allow_extra = schema.model_config.get("extra") == "allow"
     output = {}
     for field_name, field_schema in schema.model_fields.items():
         if field_name in config:
@@ -443,6 +443,12 @@ def remove_extra_keys(
                 )
             else:
                 output[field_name] = config[field_name]
+    if allow_extra:
+        # Keep keys not in the schema, but the nested schemas above
+        # may have had their extra keys stripped already.
+        for key in config:
+            if key not in output:
+                output[key] = config[key]
     return output
 
 
