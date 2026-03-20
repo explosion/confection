@@ -32,18 +32,18 @@ from typing import (
     cast,
 )
 
-import srsly
-
-try:
-    from pydantic.v1 import BaseModel, Extra, ValidationError, create_model
-    from pydantic.v1.fields import ModelField
-    from pydantic.v1.main import ModelMetaclass
-except ImportError:
-    from pydantic import BaseModel, create_model, ValidationError, Extra  # type: ignore
-    from pydantic.main import ModelMetaclass  # type: ignore
-    from pydantic.fields import ModelField  # type: ignore
+import json as _json
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
+from .validation import (
+    Schema,
+    ValidationError,
+    FieldInfo,
+    Field,
+    create_schema,
+    ensure_schema,
+    validate_type,
+)
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
@@ -66,17 +66,15 @@ class CustomInterpolation(ExtendedInterpolation):
         # If we're dealing with a quoted string as the interpolation value,
         # make sure we load and unquote it so we don't end up with '"value"'
         try:
-            json_value = srsly.json_loads(value)
+            json_value = _json.loads(value)
             if isinstance(json_value, str) and json_value not in JSON_EXCEPTIONS:
                 value = json_value
-        except ValueError:
+        except (ValueError, TypeError):
             if value and value[0] == value[-1] == "'":
                 warnings.warn(
                     f"The value [{value}] seems to be single-quoted, but values "
                     "use JSON formatting, which requires double quotes."
                 )
-        except Exception:
-            pass
         return super().before_read(parser, section, option, value)
 
     def before_get(self, parser, section, option, value, defaults):
@@ -504,9 +502,12 @@ def _mask_positional_args(name: str) -> List[Optional[str]]:
 
 def try_load_json(value: str) -> Any:
     """Load a JSON string if possible, otherwise default to original value."""
+    # Guard against ujson quirk where "-" parses as 0
+    if value == "-":
+        return value
     try:
-        return srsly.json_loads(value)
-    except Exception:
+        return _json.loads(value)
+    except (ValueError, TypeError):
         return value
 
 
@@ -520,10 +521,9 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
         # Work around values that are strings but numbers
         value = f'"{value}"'
     try:
-        value = srsly.json_dumps(value)
-        value = re.sub(r"\$([^{])", "$$\1", value)
-        value = re.sub(r"\$$", "$$", value)
-        return value
+        value = _json.dumps(value, separators=(",", ":"))
+        # Escape $ to $$ for configparser, but preserve ${...} variable references
+        return re.sub(r"\$(?!\{)", "$$", value)
     except Exception as e:
         err_msg = (
             f"Couldn't serialize config value of type {type(value)}: {e}. Make "
@@ -692,32 +692,20 @@ def alias_generator(name: str) -> str:
     return name
 
 
-def copy_model_field(field: ModelField, type_: Any) -> ModelField:
-    """Copy a model field and assign a new type, e.g. to accept an Any type
-    even though the original value is typed differently.
+def _override_field_to_any(schema, field_name):
+    """Override a field's type to Any in a schema, so validation accepts
+    any value for that field (used for unresolved promises).
     """
-    return ModelField(
-        name=field.name,
-        type_=type_,
-        class_validators=field.class_validators,
-        model_config=field.model_config,
-        default=field.default,
-        default_factory=field.default_factory,
-        required=field.required,
-        alias=field.alias,
-    )
+    if field_name in schema.model_fields:
+        field = schema.model_fields[field_name]
+        new_field = FieldInfo(default=field.default, alias=field.alias)
+        new_field.annotation = Any
+        schema.model_fields[field_name] = new_field
+    return schema
 
 
-class EmptySchema(BaseModel):
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
-
-
-class _PromiseSchemaConfig:
-    extra = "forbid"
-    arbitrary_types_allowed = True
-    alias_generator = alias_generator
+class EmptySchema(Schema):
+    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
 
 @dataclass
@@ -753,10 +741,11 @@ class registry:
         cls,
         config: Union[Config, Dict[str, Dict[str, Any]]],
         *,
-        schema: Type[BaseModel] = EmptySchema,
+        schema: Type[Schema] = EmptySchema,
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
+        schema = ensure_schema(schema)
         resolved, _ = cls._make(
             config, schema=schema, overrides=overrides, validate=validate, resolve=True
         )
@@ -767,10 +756,11 @@ class registry:
         cls,
         config: Union[Config, Dict[str, Dict[str, Any]]],
         *,
-        schema: Type[BaseModel] = EmptySchema,
+        schema: Type[Schema] = EmptySchema,
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ):
+        schema = ensure_schema(schema)
         _, filled = cls._make(
             config, schema=schema, overrides=overrides, validate=validate, resolve=False
         )
@@ -781,7 +771,7 @@ class registry:
         cls,
         config: Union[Config, Dict[str, Dict[str, Any]]],
         *,
-        schema: Type[BaseModel] = EmptySchema,
+        schema: Type[Schema] = EmptySchema,
         overrides: Dict[str, Any] = {},
         resolve: bool = True,
         validate: bool = True,
@@ -827,7 +817,7 @@ class registry:
     def _fill(
         cls,
         config: Union[Config, Dict[str, Dict[str, Any]]],
-        schema: Type[BaseModel] = EmptySchema,
+        schema: Type[Schema] = EmptySchema,
         *,
         validate: bool = True,
         resolve: bool = True,
@@ -843,6 +833,7 @@ class registry:
            work around problems (e.g. handling of generators).
         3. Final copy with promises replaced by their return values.
         """
+        schema = ensure_schema(schema)
         filled: Dict[str, Any] = {}
         validation: Dict[str, Any] = {}
         final: Dict[str, Any] = {}
@@ -854,12 +845,11 @@ class registry:
                 value = overrides[key_parent]
                 config[key] = value
             if cls.is_promise(value):
-                if key in schema.__fields__ and not resolve:
+                if key in schema.model_fields and not resolve:
                     # If we're not resolving the config, make sure that the field
                     # expecting the promise is typed Any so it doesn't fail
                     # validation if it doesn't receive the function return value
-                    field = schema.__fields__[key]
-                    schema.__fields__[key] = copy_model_field(field, Any)
+                    schema = _override_field_to_any(schema, key)
                 promise_schema = cls.make_promise_schema(value, resolve=resolve)
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -894,11 +884,11 @@ class registry:
                     validation[v_key] = []
             elif hasattr(value, "items"):
                 field_type = EmptySchema
-                if key in schema.__fields__:
-                    field = schema.__fields__[key]
-                    field_type = field.type_
-                    if not isinstance(field.type_, ModelMetaclass):
-                        # If we don't have a pydantic schema and just a type
+                if key in schema.model_fields:
+                    field = schema.model_fields[key]
+                    field_type = field.annotation
+                    if not hasattr(field_type, "model_fields"):
+                        # If we don't have a schema and just a type
                         field_type = EmptySchema
                 filled[key], validation[v_key], final[key] = cls._fill(
                     value,
@@ -914,14 +904,11 @@ class registry:
                     validation[v_key] = list(validation[v_key].values())
                     final[key] = list(final[key].values())
 
-                    if ARGS_FIELD_ALIAS in schema.__fields__ and not resolve:
+                    if ARGS_FIELD_ALIAS in schema.model_fields and not resolve:
                         # If we're not resolving the config, make sure that the field
                         # expecting the promise is typed Any so it doesn't fail
                         # validation if it doesn't receive the function return value
-                        field = schema.__fields__[ARGS_FIELD_ALIAS]
-                        schema.__fields__[ARGS_FIELD_ALIAS] = copy_model_field(
-                            field, Any
-                        )
+                        schema = _override_field_to_any(schema, ARGS_FIELD_ALIAS)
             else:
                 filled[key] = value
                 # Prevent pydantic from consuming generator if part of a union
@@ -934,26 +921,24 @@ class registry:
         exclude = []
         if validate:
             try:
-                result = schema.parse_obj(validation)
+                result = schema.model_validate(validation)
             except ValidationError as e:
                 raise ConfigValidationError(
                     config=config, errors=e.errors(), parent=parent
                 ) from None
         else:
-            # Same as parse_obj, but without validation
-            result = schema.construct(**validation)
             # If our schema doesn't allow extra values, we need to filter them
-            # manually because .construct doesn't parse anything
-            if schema.Config.extra in (Extra.forbid, Extra.ignore):
-                fields = schema.__fields__.keys()
-                # If we have a reserved field, we need to use its alias
-                field_set = [
-                    k if k != ARGS_FIELD else ARGS_FIELD_ALIAS
-                    for k in result.__fields_set__
-                ]
-                exclude = [k for k in field_set if k not in fields]
+            extra_setting = schema.model_config.get("extra", "allow")
+            if extra_setting in ("forbid", "ignore"):
+                schema_fields = set(schema.model_fields.keys())
+                exclude = [k for k in validation if k not in schema_fields]
+        # Update validation dict with defaults from schema
         exclude_validation = set([ARGS_FIELD_ALIAS, *RESERVED_FIELDS.keys()])
-        validation.update(result.dict(exclude=exclude_validation))
+        for name, field in schema.model_fields.items():
+            if name in exclude_validation:
+                continue
+            if name not in validation and not field.is_required():
+                validation[name] = field.default
         filled, final = cls._update_from_parsed(validation, filled, final)
         if exclude:
             filled = {k: v for k, v in filled.items() if k not in exclude}
@@ -1059,7 +1044,7 @@ class registry:
     @classmethod
     def make_promise_schema(
         cls, obj: Dict[str, Any], *, resolve: bool = True
-    ) -> Type[BaseModel]:
+    ) -> Type[Schema]:
         """Create a schema for a promise dict (referencing a registry function)
         by inspecting the function signature.
         """
@@ -1069,7 +1054,7 @@ class registry:
         func = cls.get(reg_name, func_name)
         # Read the argument annotations and defaults from the function signature
         id_keys = [k for k in obj.keys() if k.startswith("@")]
-        sig_args: Dict[str, Any] = {id_keys[0]: (str, ...)}
+        sig_args: Dict[str, Any] = {id_keys[0]: (str, Field(...))}
         for param in inspect.signature(func).parameters.values():
             # If no annotation is specified assume it's anything
             annotation = param.annotation if param.annotation != param.empty else Any
@@ -1078,18 +1063,27 @@ class registry:
             # Handle spread arguments and use their annotation as Sequence[whatever]
             if param.kind == param.VAR_POSITIONAL:
                 spread_annot = Sequence[annotation]  # type: ignore
-                sig_args[ARGS_FIELD_ALIAS] = (spread_annot, default)
+                sig_args[ARGS_FIELD_ALIAS] = (spread_annot, Field(default))
             else:
                 name = RESERVED_FIELDS.get(param.name, param.name)
-                sig_args[name] = (annotation, default)
-        sig_args["__config__"] = _PromiseSchemaConfig
-        return create_model("ArgModel", **sig_args)
+                sig_args[name] = (annotation, Field(default))
+        return create_schema(
+            "ArgModel",
+            __config__={
+                "extra": "forbid",
+                "arbitrary_types_allowed": True,
+                "alias_generator": alias_generator,
+            },
+            **sig_args,
+        )
 
 
 __all__ = [
     "Config",
     "registry",
     "ConfigValidationError",
+    "Promise",
+    "Schema",
     "SimpleFrozenDict",
     "SimpleFrozenList",
 ]

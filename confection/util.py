@@ -1,13 +1,6 @@
 import functools
-import sys
 from copy import deepcopy
-from typing import Any, Callable, Iterator, TypeVar
-
-if sys.version_info < (3, 8):
-    # Ignoring type for mypy to avoid "Incompatible import" error (https://github.com/python/mypy/issues/4427).
-    from typing_extensions import Protocol  # type: ignore
-else:
-    from typing import Protocol
+from typing import Any, Callable, Iterator, Protocol, TypeVar
 
 _DIn = TypeVar("_DIn")
 
