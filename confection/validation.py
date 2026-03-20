@@ -15,6 +15,7 @@ from typing import (
     Any,
     Literal,
     Optional,
+    TypeVar,
     Union,
     get_args,
     get_origin,
@@ -53,7 +54,7 @@ class FieldInfo:
     def __init__(self, default=..., *, alias=None):
         self.default = default
         self.alias = alias
-        self.annotation = None
+        self.annotation: Any = None
 
     def is_required(self):
         return self.default is ...
@@ -339,6 +340,18 @@ def validate_type(value, annotation):
     # NewType: unwrap to the supertype
     if callable(annotation) and hasattr(annotation, "__supertype__"):
         return validate_type(value, annotation.__supertype__)
+
+    # TypeVar: validate against bound or constraints
+    if isinstance(annotation, TypeVar):
+        if annotation.__bound__ is not None:
+            return validate_type(value, annotation.__bound__)
+        if annotation.__constraints__:
+            for constraint in annotation.__constraints__:
+                if validate_type(value, constraint) is None:
+                    return None
+            names = ", ".join(_type_display(c) for c in annotation.__constraints__)
+            return f"Input should be valid for: {names}"
+        return None  # unconstrained TypeVar accepts anything
 
     # Constrained types
     if annotation is StrictBool:
