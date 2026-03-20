@@ -217,7 +217,10 @@ def resolve_type_hints(func):
         module = sys.modules.get(getattr(func, "__module__", None))
         globalns = vars(module) if module else None
         return get_type_hints(func, globalns=globalns)
-    except Exception:
+    except (NameError, AttributeError, TypeError):
+        # NameError: unresolvable forward reference
+        # AttributeError: module without expected attributes
+        # TypeError: invalid annotation object
         return {}
 
 
@@ -549,6 +552,33 @@ def _validate_schema(data, fields, config, alias_generator=None):
 _pydantic_cache: dict = {}
 
 
+def _get_pydantic_validation_error():
+    """Return the pydantic ValidationError class(es) to catch.
+
+    Tries both pydantic.v1 and pydantic so we catch the right exception
+    regardless of which API the caller's model was built with.
+    """
+    errors = []
+    try:
+        from pydantic.v1 import ValidationError as V1Err
+
+        errors.append(V1Err)
+    except (ImportError, ModuleNotFoundError):
+        pass
+    try:
+        from pydantic import ValidationError as V2Err
+
+        errors.append(V2Err)
+    except (ImportError, ModuleNotFoundError):
+        pass
+    if errors:
+        return tuple(errors)
+    # Should never happen — we only get here if someone passed a pydantic
+    # model, which means pydantic is installed.  Fall back to Exception so
+    # the except clause still works rather than crashing.
+    return (Exception,)  # pragma: no cover
+
+
 def _is_pydantic_model(cls):
     """Check if cls is a pydantic BaseModel class (v1 or v2) without hard-depending
     on pydantic. Returns False if pydantic is not installed."""
@@ -559,19 +589,19 @@ def _is_pydantic_model(cls):
     # pydantic v1 compat layer (pydantic.v1) or native v1
     try:
         from pydantic.v1 import BaseModel as V1
-
+    except (ImportError, ModuleNotFoundError):
+        pass
+    else:
         if issubclass(cls, V1):
             return True
-    except Exception:
-        pass
     # pydantic v2 (or native v1 without the .v1 subpackage)
     try:
         from pydantic import BaseModel as V2
-
+    except (ImportError, ModuleNotFoundError):
+        pass
+    else:
         if issubclass(cls, V2):
             return True
-    except Exception:
-        pass
     return False
 
 
@@ -690,6 +720,10 @@ def ensure_schema(schema_cls):
     # pydantic-level validators / strict types / constraints keep working.
     @classmethod  # type: ignore[misc]
     def _pydantic_model_validate(cls, data):
+        # Resolve the concrete pydantic ValidationError class once so the
+        # except clause is as narrow as possible.
+        pyd_validation_err = _get_pydantic_validation_error()
+
         try:
             if hasattr(pyd_cls, "model_validate"):
                 pyd_cls.model_validate(data)
@@ -697,10 +731,8 @@ def ensure_schema(schema_cls):
                 pyd_cls.parse_obj(data)
             else:
                 pyd_cls(**data)
-        except Exception as e:
-            if hasattr(e, "errors") and callable(e.errors):
-                raise ValidationError(e.errors()) from None
-            raise
+        except pyd_validation_err as e:
+            raise ValidationError(e.errors()) from None
         # Return attribute-accessible result with defaults filled in
         result_data = dict(data)
         for name, field in cls.model_fields.items():
