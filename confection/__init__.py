@@ -561,8 +561,12 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
         return value
     try:
         value = _json.dumps(value, separators=(",", ":"))
-        # Escape $ to $$ for configparser, but preserve ${...} variable references
-        return re.sub(r"\$(?!\{)", "$$", value)
+        # Escape all $ to $$ for configparser, then restore valid ${...}
+        # variable references.  This ensures incomplete sequences like "${"
+        # are escaped, while "${foo.bar}" is preserved.
+        value = value.replace("$", "$$")
+        value = re.sub(r"\$(\$\{[\w\.:]+\})", r"\1", value)
+        return value
     except Exception as e:
         err_msg = (
             f"Couldn't serialize config value of type {type(value)}: {e}. Make "

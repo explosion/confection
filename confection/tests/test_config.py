@@ -319,6 +319,19 @@ def test_config_to_str_escapes():
     assert cfg == section_dict
 
 
+def test_config_incomplete_dollar_brace():
+    """Strings containing ${ without a closing } should roundtrip correctly."""
+    cfg = Config({"section": {"val": "${"}})
+    cfg_str = cfg.to_str()
+    cfg2 = Config().from_str(cfg_str)
+    assert cfg2["section"]["val"] == "${"
+
+    cfg = Config({"section": {"val": "hello ${ world"}})
+    cfg_str = cfg.to_str()
+    cfg2 = Config().from_str(cfg_str)
+    assert cfg2["section"]["val"] == "hello ${ world"
+
+
 def test_config_roundtrip_bytes():
     cfg = Config().from_str(OPTIMIZER_CFG)
     cfg_bytes = cfg.to_bytes()
