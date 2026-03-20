@@ -17,6 +17,8 @@ from confection import Config, try_load_json
 
 def _json_dumps(value):
     return json.dumps(value, separators=(",", ":"))
+
+
 from confection.validation import Schema, ValidationError
 from confection.tests.util import my_registry
 

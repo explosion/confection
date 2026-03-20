@@ -786,8 +786,7 @@ def test_is_in_config(prop, expected):
 
 def test_resolve_prefilled_values():
     class Language(object):
-        def __init__(self):
-            ...
+        def __init__(self): ...
 
     @my_registry.optimizers("prefilled.v1")
     def prefilled(nlp: Language, value: int = 10):
@@ -1194,9 +1193,21 @@ def test_config_is_interpolated():
     "section_order,expected_str,expected_keys",
     [
         # fmt: off
-        ([], "[a]\nb = 1\nc = 2\n\n[a.d]\ne = 3\n\n[a.f]\ng = 4\n\n[h]\ni = 5\n\n[j]\nk = 6", ["a", "h", "j"]),
-        (["j", "h", "a"], "[j]\nk = 6\n\n[h]\ni = 5\n\n[a]\nb = 1\nc = 2\n\n[a.d]\ne = 3\n\n[a.f]\ng = 4", ["j", "h", "a"]),
-        (["h"], "[h]\ni = 5\n\n[a]\nb = 1\nc = 2\n\n[a.d]\ne = 3\n\n[a.f]\ng = 4\n\n[j]\nk = 6", ["h", "a", "j"])
+        (
+            [],
+            "[a]\nb = 1\nc = 2\n\n[a.d]\ne = 3\n\n[a.f]\ng = 4\n\n[h]\ni = 5\n\n[j]\nk = 6",
+            ["a", "h", "j"],
+        ),
+        (
+            ["j", "h", "a"],
+            "[j]\nk = 6\n\n[h]\ni = 5\n\n[a]\nb = 1\nc = 2\n\n[a.d]\ne = 3\n\n[a.f]\ng = 4",
+            ["j", "h", "a"],
+        ),
+        (
+            ["h"],
+            "[h]\ni = 5\n\n[a]\nb = 1\nc = 2\n\n[a.d]\ne = 3\n\n[a.f]\ng = 4\n\n[j]\nk = 6",
+            ["h", "a", "j"],
+        ),
         # fmt: on
     ],
 )
@@ -1401,17 +1412,30 @@ def test_config_interpolates(greeting, value, expected):
         [342, "[1, hello ${vars.a}, 3]", "hello 342"],
         ["everyone", "[1, hello ${vars.a}, 3]", "hello everyone"],
         ["tout le monde", "[1, hello ${vars.a}, 3]", "hello tout le monde"],
-        pytest.param("42", "[1, hello ${vars.a}, 3]", "hello 42", marks=pytest.mark.xfail),
+        pytest.param(
+            "42", "[1, hello ${vars.a}, 3]", "hello 42", marks=pytest.mark.xfail
+        ),
         # substituting part of a explicit string inside a list
         [342, "[1, 'hello ${vars.a}', '3']", "hello 342"],
         ["everyone", "[1, 'hello ${vars.a}', '3']", "hello everyone"],
         ["tout le monde", "[1, 'hello ${vars.a}', '3']", "hello tout le monde"],
-        pytest.param("42", "[1, 'hello ${vars.a}', '3']", "hello 42", marks=pytest.mark.xfail),
+        pytest.param(
+            "42", "[1, 'hello ${vars.a}', '3']", "hello 42", marks=pytest.mark.xfail
+        ),
         # more complicated example
         [342, "[{'name':'x','script':['hello ${vars.a}']}]", "hello 342"],
         ["everyone", "[{'name':'x','script':['hello ${vars.a}']}]", "hello everyone"],
-        ["tout le monde", "[{'name':'x','script':['hello ${vars.a}']}]", "hello tout le monde"],
-        pytest.param("42", "[{'name':'x','script':['hello ${vars.a}']}]", "hello 42", marks=pytest.mark.xfail),
+        [
+            "tout le monde",
+            "[{'name':'x','script':['hello ${vars.a}']}]",
+            "hello tout le monde",
+        ],
+        pytest.param(
+            "42",
+            "[{'name':'x','script':['hello ${vars.a}']}]",
+            "hello 42",
+            marks=pytest.mark.xfail,
+        ),
         # fmt: on
     ],
 )

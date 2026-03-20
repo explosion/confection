@@ -1,6 +1,7 @@
 """
 Registered functions used for config tests.
 """
+
 import contextlib
 import dataclasses
 import shutil

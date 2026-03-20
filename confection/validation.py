@@ -390,8 +390,7 @@ def _validate_plain_type(value, typ):
     if typ is int:
         if isinstance(value, bool):
             return (
-                "Input should be a valid integer,"
-                " unable to parse string as an integer"
+                "Input should be a valid integer, unable to parse string as an integer"
             )
         if isinstance(value, int):
             return None
@@ -401,10 +400,7 @@ def _validate_plain_type(value, typ):
                 return None
             except (ValueError, TypeError):
                 pass
-        return (
-            "Input should be a valid integer,"
-            " unable to parse string as an integer"
-        )
+        return "Input should be a valid integer, unable to parse string as an integer"
 
     if typ is float:
         if isinstance(value, bool):
@@ -573,9 +569,7 @@ def _validate_generic(value, origin, args):
             elif args != ((),):
                 # Tuple[X, Y, Z] — fixed-length positional
                 if len(value) != len(args):
-                    return (
-                        f"Expected {len(args)} items in tuple, got {len(value)}"
-                    )
+                    return f"Expected {len(args)} items in tuple, got {len(value)}"
                 for i, (item, expected) in enumerate(zip(value, args)):
                     err = validate_type(item, expected)
                     if err:
