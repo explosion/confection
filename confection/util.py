@@ -2,9 +2,6 @@ import functools
 from copy import deepcopy
 from typing import Any, Callable, Iterator, Protocol, TypeVar
 
-from pydantic import GetCoreSchemaHandler
-from pydantic_core import core_schema
-
 _DIn = TypeVar("_DIn")
 
 
@@ -36,19 +33,14 @@ class Generator(Iterator):
     """
 
     @classmethod
-    def __get_pydantic_core_schema__(
-        cls,
-        _source_type: Any,
-        _handler: GetCoreSchemaHandler,
-    ) -> core_schema.CoreSchema:
-        return core_schema.with_info_plain_validator_function(cls.__validate__)
+    def __get_validators__(cls):
+        yield cls.validate
 
     @classmethod
-    def __validate__(cls, v, info):
+    def validate(cls, v):
         if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
             raise TypeError("not a valid iterator")
-        else:
-            return v
+        return v
 
 
 DEFAULT_FROZEN_DICT_ERROR = (
@@ -88,7 +80,7 @@ class SimpleFrozenDict(dict):
     def pop(self, key, default=None):
         raise NotImplementedError(self.error)
 
-    def update(self, other):
+    def update(self, other):  # type: ignore[override]
         raise NotImplementedError(self.error)
 
     def __deepcopy__(self, memo):
@@ -141,12 +133,3 @@ class SimpleFrozenList(list):
 
     def __deepcopy__(self, memo):
         return self.__class__(deepcopy(v) for v in self)
-
-
-def is_promise(obj) -> bool:
-    if not hasattr(obj, "keys"):
-        return False
-    id_keys = [k for k in obj.keys() if isinstance(k, str) and k.startswith("@")]
-    if len(id_keys):
-        return True
-    return False
