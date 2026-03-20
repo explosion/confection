@@ -20,9 +20,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - run: pip install ruff
+      - run: pip install ruff pyright
       - run: ruff check confection
       - run: ruff format confection --check
+      - run: pyright confection --pythonversion 3.10
 
   tests:
     name: Test
