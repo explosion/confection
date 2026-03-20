@@ -31,9 +31,7 @@ class Dim(BaseModel):
 @pytest.fixture(autouse=True)
 def _register():
     if not hasattr(registry, "dims"):
-        registry.dims = catalogue.create(
-            "confection", "dims", entry_points=False
-        )
+        registry.dims = catalogue.create("confection", "dims", entry_points=False)
     if not hasattr(registry, "architectures"):
         registry.architectures = catalogue.create(
             "confection", "architectures", entry_points=False

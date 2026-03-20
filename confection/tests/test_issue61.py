@@ -6,8 +6,6 @@ Currently this causes an InterpolationDepthError because configparser's
 ExtendedInterpolation only resolves ${section.key} not ${section}.
 """
 
-import pytest
-
 from confection import Config
 
 

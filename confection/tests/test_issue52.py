@@ -2,8 +2,6 @@
 to str and back.
 """
 
-import pytest
-
 from confection import Config
 
 
