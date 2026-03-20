@@ -695,12 +695,18 @@ def alias_generator(name: str) -> str:
 def _override_field_to_any(schema, field_name):
     """Override a field's type to Any in a schema, so validation accepts
     any value for that field (used for unresolved promises).
+
+    Once a field is overridden, pydantic-delegating model_validate can't be
+    used (the original pydantic model still has the old type).  Mark the
+    schema so it falls back to our own validation.
     """
     if field_name in schema.model_fields:
         field = schema.model_fields[field_name]
         new_field = FieldInfo(default=field.default, alias=field.alias)
         new_field.annotation = Any
         schema.model_fields[field_name] = new_field
+        # After mutation, pydantic delegation is stale — use our own validation
+        schema.model_validate = classmethod(Schema.model_validate.__func__)
     return schema
 
 
@@ -938,7 +944,13 @@ class registry:
             if name in exclude_validation:
                 continue
             if name not in validation and not field.is_required():
-                validation[name] = field.default
+                default = field.default
+                # Unfreeze frozen containers so _update_from_parsed can write
+                if isinstance(default, dict):
+                    default = dict(default)
+                elif isinstance(default, list):
+                    default = list(default)
+                validation[name] = default
         filled, final = cls._update_from_parsed(validation, filled, final)
         if exclude:
             filled = {k: v for k, v in filled.items() if k not in exclude}

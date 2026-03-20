@@ -434,12 +434,6 @@ def _validate_plain_type(value, typ):
     try:
         if isinstance(value, typ):
             return None
-        # For constrained subtypes (e.g. pydantic's StrictInt which is a
-        # subclass of int): if the annotation inherits from the value's
-        # type, the value is structurally compatible.  Accept it here and
-        # let downstream validators (pydantic) enforce the constraint.
-        if issubclass(typ, type(value)):
-            return None
         # Types that declare custom validation via pydantic's schema protocol
         # (e.g. thinc's Floats2d).  Extract and call the validator directly
         # — the hook returns a plain dict, no pydantic import needed.
@@ -449,6 +443,11 @@ def _validate_plain_type(value, typ):
         # validator functions.
         if hasattr(typ, "__get_validators__"):
             return _call_pydantic_v1_validators(typ, value)
+        # For constrained subtypes without validator hooks: if the
+        # annotation inherits from the value's type, the value is
+        # structurally compatible.
+        if issubclass(typ, type(value)):
+            return None
     except TypeError:
         return None
 
@@ -498,15 +497,33 @@ def _call_pydantic_schema_validator(typ, value):
 def _call_pydantic_v1_validators(typ, value):
     """Call validators from a type's __get_validators__ hook (pydantic v1).
 
-    The hook yields single-argument validator functions.
-    Returns None on success, or an error message string on failure.
+    Validators may accept 1 arg (value), 2 args (value, field), or
+    3 args (value, field, config).  For multi-arg validators that need
+    field metadata (like number constraints), we build a minimal shim.
     """
     for validator in typ.__get_validators__():
         try:
-            value = validator(value)
+            nparams = len(inspect.signature(validator).parameters)
+        except (ValueError, TypeError):
+            nparams = 1
+        if nparams > 2:
+            continue  # skip validators requiring pydantic config objects
+        try:
+            if nparams == 1:
+                value = validator(value)
+            else:
+                value = validator(value, _PydanticV1FieldShim(typ))
         except (ValueError, TypeError, AssertionError) as e:
             return str(e)
     return None
+
+
+class _PydanticV1FieldShim:
+    """Minimal shim for pydantic v1 ModelField, providing just enough
+    for constraint validators (number_size_validator etc.)."""
+
+    def __init__(self, typ):
+        self.type_ = typ
 
 
 def _validate_generic(value, origin, args):
