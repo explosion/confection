@@ -17,14 +17,8 @@ if sys.version_info >= (3, 14):
 pydantic = pytest.importorskip("pydantic")
 
 try:
-    from pydantic.v1 import (
-        BaseModel,
-        Field,
-        StrictFloat,
-        StrictInt,
-        StrictStr,
-        validator,
-    )
+    from pydantic.v1 import (BaseModel, Field, StrictFloat, StrictInt,
+                             StrictStr, validator)
 except ImportError:
     from pydantic import (  # type: ignore
         BaseModel,
