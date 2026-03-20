@@ -11,7 +11,7 @@ from ._config import (  # noqa: F401
 )
 from ._errors import ConfigValidationError
 from ._registry import Promise, registry
-from ._validation import Schema
+from ._validation import Schema, ensure_schema
 from .util import SimpleFrozenDict, SimpleFrozenList
 
 __all__ = [

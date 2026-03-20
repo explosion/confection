@@ -33,6 +33,7 @@ from ._validation import (
     Schema,
     ValidationError,
     create_schema,
+    ensure_schema,
     resolve_type_hints,
 )
 from .util import is_promise
@@ -154,6 +155,7 @@ class registry:
         overrides: Dict[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
+        schema = ensure_schema(schema)
         config = cls.fill(
             config,
             schema=schema,
@@ -179,6 +181,7 @@ class registry:
         validate: bool = True,
         interpolate: bool = False,
     ) -> Config:
+        schema = ensure_schema(schema)
         if cls.is_promise(config):
             err_msg = "The top-level config object can't be a reference to a registered function."
             raise ConfigValidationError(config=config, errors=[{"msg": err_msg}])

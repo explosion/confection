@@ -370,6 +370,12 @@ def _validate_plain_type(value, typ):
     try:
         if isinstance(value, typ):
             return None
+        # For constrained subtypes (e.g. pydantic's StrictInt which is a
+        # subclass of int): if the annotation inherits from the value's
+        # type, the value is structurally compatible.  Accept it here and
+        # let downstream validators (pydantic) enforce the constraint.
+        if issubclass(typ, type(value)):
+            return None
     except TypeError:
         return None
 
@@ -536,3 +542,178 @@ def _validate_schema(data, fields, config, alias_generator=None):
             )
 
     return errors
+
+
+# === Pydantic Compatibility Shim ===
+
+_pydantic_cache: dict = {}
+
+
+def _is_pydantic_model(cls):
+    """Check if cls is a pydantic BaseModel class (v1 or v2) without hard-depending
+    on pydantic. Returns False if pydantic is not installed."""
+    if not isinstance(cls, type):
+        return False
+    if issubclass(cls, Schema):
+        return False
+    # pydantic v1 compat layer (pydantic.v1) or native v1
+    try:
+        from pydantic.v1 import BaseModel as V1
+
+        if issubclass(cls, V1):
+            return True
+    except Exception:
+        pass
+    # pydantic v2 (or native v1 without the .v1 subpackage)
+    try:
+        from pydantic import BaseModel as V2
+
+        if issubclass(cls, V2):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _pydantic_instance_to_dict(obj):
+    """Convert a pydantic model instance to a dict."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return obj
+
+
+def _extract_pydantic_fields(pydantic_cls):
+    """Extract field definitions from a pydantic BaseModel class (v1 or v2)."""
+    fields = {}
+
+    if hasattr(pydantic_cls, "__fields__"):
+        # pydantic v1 interface
+        for name, pyd_field in pydantic_cls.__fields__.items():
+            annotation = pyd_field.outer_type_
+            if pyd_field.required:
+                default = ...
+            else:
+                default = pyd_field.default
+            alias = pyd_field.alias if pyd_field.alias != name else None
+
+            # Recursively convert nested pydantic model annotations
+            if isinstance(annotation, type) and _is_pydantic_model(annotation):
+                annotation = ensure_schema(annotation)
+            # Convert pydantic instance defaults to dicts
+            if default is not ... and hasattr(default, "__fields__"):
+                default = _pydantic_instance_to_dict(default)
+
+            field = FieldInfo(default=default, alias=alias)
+            field.annotation = annotation
+            fields[name] = field
+
+    elif hasattr(pydantic_cls, "model_fields"):
+        # pydantic v2 interface
+        for name, pyd_field in pydantic_cls.model_fields.items():
+            annotation = pyd_field.annotation
+            if pyd_field.is_required():
+                default = ...
+            else:
+                default = pyd_field.default
+            alias = pyd_field.alias
+
+            if isinstance(annotation, type) and _is_pydantic_model(annotation):
+                annotation = ensure_schema(annotation)
+            if default is not ... and hasattr(default, "model_dump"):
+                default = _pydantic_instance_to_dict(default)
+
+            field = FieldInfo(default=default, alias=alias)
+            field.annotation = annotation
+            fields[name] = field
+
+    return fields
+
+
+def _extract_pydantic_config(pydantic_cls):
+    """Extract model config from a pydantic BaseModel class (v1 or v2)."""
+    config = {"extra": "allow"}
+
+    if hasattr(pydantic_cls, "__config__"):
+        # pydantic v1: inner class Config
+        cfg = pydantic_cls.__config__
+        extra = getattr(cfg, "extra", "allow")
+        # v1 may use an enum (e.g. Extra.forbid); extract the .value
+        if hasattr(extra, "value"):
+            extra = extra.value
+        config["extra"] = extra if isinstance(extra, str) else str(extra)
+        if hasattr(cfg, "arbitrary_types_allowed"):
+            config["arbitrary_types_allowed"] = cfg.arbitrary_types_allowed
+    elif hasattr(pydantic_cls, "model_config") and isinstance(
+        pydantic_cls.model_config, dict
+    ):
+        # pydantic v2: dict
+        config = dict(pydantic_cls.model_config)
+
+    return config
+
+
+def ensure_schema(schema_cls):
+    """Ensure *schema_cls* satisfies the Schema interface.
+
+    If it already is a Schema subclass, return it unchanged.
+    If it is a pydantic BaseModel (v1 or v2), build a thin Schema wrapper
+    that exposes the same ``model_fields`` / ``model_config`` and delegates
+    ``model_validate`` to the original pydantic class so that pydantic
+    validators, strict types, constrained types etc. keep working.
+
+    This allows downstream libraries (spaCy, thinc, …) to keep passing
+    pydantic schemas to ``registry.resolve()`` / ``registry.fill()`` even
+    though confection itself no longer depends on pydantic.
+    """
+    if isinstance(schema_cls, type) and issubclass(schema_cls, Schema):
+        return schema_cls
+    if not _is_pydantic_model(schema_cls):
+        return schema_cls
+
+    # Return cached conversion if available
+    if schema_cls in _pydantic_cache:
+        return _pydantic_cache[schema_cls]
+
+    fields = _extract_pydantic_fields(schema_cls)
+    config = _extract_pydantic_config(schema_cls)
+
+    # Build wrapper class that inherits from Schema
+    pyd_cls = schema_cls  # capture for closure
+
+    wrapper = type(pydantic_cls_name(schema_cls), (Schema,), {})
+    wrapper.model_fields = fields
+    wrapper.model_config = config
+
+    # Delegate model_validate to the original pydantic model so that
+    # pydantic-level validators / strict types / constraints keep working.
+    @classmethod  # type: ignore[misc]
+    def _pydantic_model_validate(cls, data):
+        try:
+            if hasattr(pyd_cls, "model_validate"):
+                pyd_cls.model_validate(data)
+            elif hasattr(pyd_cls, "parse_obj"):
+                pyd_cls.parse_obj(data)
+            else:
+                pyd_cls(**data)
+        except Exception as e:
+            if hasattr(e, "errors") and callable(e.errors):
+                raise ValidationError(e.errors()) from None
+            raise
+        # Return attribute-accessible result with defaults filled in
+        result_data = dict(data)
+        for name, field in cls.model_fields.items():
+            data_key = field.alias if field.alias is not None else name
+            if data_key not in result_data and not field.is_required():
+                result_data[data_key] = field.default
+        return _ValidatedResult(result_data)
+
+    wrapper.model_validate = _pydantic_model_validate
+
+    _pydantic_cache[schema_cls] = wrapper
+    return wrapper
+
+
+def pydantic_cls_name(cls):
+    return getattr(cls, "__name__", "PydanticSchema")
