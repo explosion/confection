@@ -383,6 +383,14 @@ def _validate_plain_type(value, typ):
         # let downstream validators (pydantic) enforce the constraint.
         if issubclass(typ, type(value)):
             return None
+        # Types that declare custom validation via pydantic's protocol
+        # (e.g. thinc's Floats2d with __get_pydantic_core_schema__) own
+        # their own validation logic.  Accept the value here — the type's
+        # validator will run when the function is actually called.
+        if hasattr(typ, "__get_pydantic_core_schema__") or hasattr(
+            typ, "__get_validators__"
+        ):
+            return None
     except TypeError:
         return None
 
