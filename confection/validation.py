@@ -22,6 +22,22 @@ from typing import (
     get_type_hints,
 )
 
+# Optional pydantic imports — confection doesn't depend on pydantic,
+# but if it's installed we can detect and convert BaseModel schemas.
+try:
+    from pydantic.v1 import BaseModel as _PydanticV1BaseModel
+    from pydantic.v1 import ValidationError as _PydanticV1ValidationError
+except (ImportError, ModuleNotFoundError):
+    _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
+    _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
+
+try:
+    from pydantic import BaseModel as _PydanticV2BaseModel
+    from pydantic import ValidationError as _PydanticV2ValidationError
+except (ImportError, ModuleNotFoundError):
+    _PydanticV2BaseModel = None  # type: ignore[assignment,misc]
+    _PydanticV2ValidationError = None  # type: ignore[assignment,misc]
+
 # === Constrained Types ===
 
 
@@ -762,18 +778,10 @@ def _get_pydantic_validation_error():
     regardless of which API the caller's model was built with.
     """
     errors = []
-    try:
-        from pydantic.v1 import ValidationError as V1Err
-
-        errors.append(V1Err)
-    except (ImportError, ModuleNotFoundError):
-        pass
-    try:
-        from pydantic import ValidationError as V2Err
-
-        errors.append(V2Err)
-    except (ImportError, ModuleNotFoundError):
-        pass
+    if _PydanticV1ValidationError is not None:
+        errors.append(_PydanticV1ValidationError)
+    if _PydanticV2ValidationError is not None:
+        errors.append(_PydanticV2ValidationError)
     if errors:
         return tuple(errors)
     # Should never happen — we only get here if someone passed a pydantic
@@ -789,22 +797,10 @@ def _is_pydantic_model(cls):
         return False
     if issubclass(cls, Schema):
         return False
-    # pydantic v1 compat layer (pydantic.v1) or native v1
-    try:
-        from pydantic.v1 import BaseModel as V1
-    except (ImportError, ModuleNotFoundError):
-        pass
-    else:
-        if issubclass(cls, V1):
-            return True
-    # pydantic v2 (or native v1 without the .v1 subpackage)
-    try:
-        from pydantic import BaseModel as V2
-    except (ImportError, ModuleNotFoundError):
-        pass
-    else:
-        if issubclass(cls, V2):
-            return True
+    if _PydanticV1BaseModel is not None and issubclass(cls, _PydanticV1BaseModel):
+        return True
+    if _PydanticV2BaseModel is not None and issubclass(cls, _PydanticV2BaseModel):
+        return True
     return False
 
 
