@@ -23,7 +23,7 @@ jobs:
       - run: pip install ruff pyright
       - run: ruff check confection
       - run: ruff format confection --check
-      - run: pyright confection --pythonversion 3.10
+      - run: pyright confection
 
   tests:
     name: Test
