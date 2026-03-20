@@ -8,6 +8,7 @@ import collections.abc
 import inspect
 import sys
 import types
+from pathlib import PurePath
 from types import GeneratorType
 from typing import (
     Annotated,
@@ -422,6 +423,12 @@ def _validate_plain_type(value, typ):
         if isinstance(value, str):
             return None
         return "Input should be a valid string"
+
+    # Path: accept strings (pydantic coerces str → Path)
+    if issubclass(typ, PurePath):
+        if isinstance(value, (str, PurePath)):
+            return None
+        return f"Input should be a valid path"
 
     # Custom class - isinstance check
     try:

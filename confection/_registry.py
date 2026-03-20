@@ -45,7 +45,7 @@ class EmptySchema(Schema):
     model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 
 
 @dataclass
@@ -54,8 +54,11 @@ class Promise(Generic[_PromisedType]):
     name: str
     var_args: List[Any]
     kwargs: Dict[str, Any]
-    getter: Union[Callable[..., _PromisedType], catalogue.RegistryError]
-    arg_schema: Optional[Type[Schema]]
+
+    # Internal — excluded from __init__ so pydantic won't introspect them
+    # when Promise appears in Union type annotations.
+    getter: Any = dataclass_field(default=None, init=False, repr=False)
+    arg_schema: Any = dataclass_field(default=None, init=False, repr=False)
 
     @property
     def return_type(self) -> _PromisedType:
@@ -109,9 +112,9 @@ class Promise(Generic[_PromisedType]):
             name=func_name,
             var_args=var_args,
             kwargs=kwargs,
-            getter=getter,
-            arg_schema=schema,
         )
+        output.getter = getter
+        output.arg_schema = schema
         return output
 
 
