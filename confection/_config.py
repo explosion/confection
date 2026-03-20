@@ -16,7 +16,7 @@ from configparser import (
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-import srsly
+import json as _json
 
 from ._errors import ConfigValidationError
 from .util import is_promise
@@ -536,9 +536,12 @@ def _mask_positional_args(name: str) -> List[Optional[str]]:
 
 def try_load_json(value: str) -> Any:
     """Load a JSON string if possible, otherwise default to original value."""
+    # Guard against ujson quirk where "-" parses as 0
+    if value == "-":
+        return value
     try:
-        return srsly.json_loads(value)
-    except Exception:
+        return _json.loads(value)
+    except (ValueError, TypeError):
         return value
 
 
@@ -549,7 +552,7 @@ def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") ->
     if isinstance(value, str) and VARIABLE_RE.search(value):
         return value
     try:
-        value = srsly.json_dumps(value)
+        value = _json.dumps(value, separators=(",", ":"))
     except Exception as e:
         err_msg = (
             f"Couldn't serialize config value of type {type(value)}: {e}. Make "

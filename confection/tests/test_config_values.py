@@ -5,8 +5,9 @@ Uses property-based testing to explore the space of possible config values.
 
 from configparser import ConfigParser, ExtendedInterpolation
 
+import json
+
 import pytest
-import srsly
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from numpy.testing import assert_allclose, assert_equal
@@ -361,7 +362,7 @@ ini_float_values = st.floats(
 ini_bool_values = st.sampled_from(["true", "false"])
 
 ini_scalar_value = st.one_of(
-    ini_string_values.map(lambda s: srsly.json_dumps(s)),
+    ini_string_values.map(lambda s: json.dumps(s)),
     ini_int_values,
     ini_float_values,
     ini_bool_values,
@@ -401,7 +402,7 @@ def config_string(draw):
 
             if value_type == "string":
                 py_value = draw(ini_string_values)
-                ini_str = srsly.json_dumps(py_value)
+                ini_str = json.dumps(py_value)
             elif value_type == "int":
                 py_value = draw(st.integers(min_value=-10000, max_value=10000))
                 ini_str = str(py_value)
@@ -550,12 +551,12 @@ def test_positional_args_roundtrip(data):
 
     lines = [f"[{parent_name}]"]
     for key, value in parent_fields.items():
-        lines.append(f"{key} = {srsly.json_dumps(value)}")
+        lines.append(f"{key} = {json.dumps(value)}")
 
     for name, content in zip(positional_names, positional_contents):
         lines.append(f"\n[{parent_name}.*.{name}]")
         for key, value in content.items():
-            lines.append(f"{key} = {srsly.json_dumps(value)}")
+            lines.append(f"{key} = {json.dumps(value)}")
 
     config_str = "\n".join(lines)
 
