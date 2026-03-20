@@ -247,7 +247,7 @@ def create_schema(__name, __config__=None, **fields):
     cls = type(__name, (Schema,), namespace)
     # Apply alias_generator to fields that don't have explicit aliases
     alias_gen = __config__.get("alias_generator") if __config__ else None
-    if alias_gen:
+    if alias_gen and callable(alias_gen):
         for name, field in processed.items():
             if field.alias is None:
                 field.alias = alias_gen(name)
@@ -265,7 +265,8 @@ def resolve_type_hints(func):
     Falls back to raw annotations if resolution fails.
     """
     try:
-        module = sys.modules.get(getattr(func, "__module__", None))
+        mod_name = getattr(func, "__module__", None)
+        module = sys.modules.get(mod_name) if mod_name else None
         globalns = vars(module) if module else None
         return get_type_hints(func, globalns=globalns)
     except (NameError, AttributeError, TypeError, RecursionError):
@@ -339,7 +340,7 @@ def validate_type(value, annotation):
 
     # NewType: unwrap to the supertype
     if callable(annotation) and hasattr(annotation, "__supertype__"):
-        return validate_type(value, annotation.__supertype__)
+        return validate_type(value, annotation.__supertype__)  # pyright: ignore[reportFunctionMemberAccess]
 
     # TypeVar: validate against bound or constraints
     if isinstance(annotation, TypeVar):
@@ -877,7 +878,7 @@ def _extract_pydantic_config(pydantic_cls):
         extra = getattr(cfg, "extra", "allow")
         # v1 may use an enum (e.g. Extra.forbid); extract the .value
         if hasattr(extra, "value"):
-            extra = extra.value
+            extra = extra.value  # pyright: ignore[reportAttributeAccessIssue]
         config["extra"] = extra if isinstance(extra, str) else str(extra)
         if hasattr(cfg, "arbitrary_types_allowed"):
             config["arbitrary_types_allowed"] = cfg.arbitrary_types_allowed
@@ -938,7 +939,7 @@ def ensure_schema(schema_cls):
             else:
                 pyd_cls(**data)
         except pyd_validation_err as e:
-            raise ValidationError(e.errors()) from None
+            raise ValidationError(e.errors()) from None  # pyright: ignore[reportAttributeAccessIssue]
         # Return attribute-accessible result with defaults filled in
         result_data = dict(data)
         for name, field in cls.model_fields.items():

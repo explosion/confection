@@ -80,7 +80,7 @@ class SimpleFrozenDict(dict):
     def pop(self, key, default=None):
         raise NotImplementedError(self.error)
 
-    def update(self, other):
+    def update(self, other):  # type: ignore[override]
         raise NotImplementedError(self.error)
 
     def __deepcopy__(self, memo):
