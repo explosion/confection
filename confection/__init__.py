@@ -4,21 +4,45 @@ import io
 import json as _json
 import re
 import warnings
-from configparser import (MAX_INTERPOLATION_DEPTH, ConfigParser,
-                          ExtendedInterpolation, InterpolationDepthError,
-                          InterpolationMissingOptionError,
-                          InterpolationSyntaxError, NoOptionError,
-                          NoSectionError, ParsingError)
+from configparser import (
+    MAX_INTERPOLATION_DEPTH,
+    ConfigParser,
+    ExtendedInterpolation,
+    InterpolationDepthError,
+    InterpolationMissingOptionError,
+    InterpolationSyntaxError,
+    NoOptionError,
+    NoSectionError,
+    ParsingError,
+)
 from dataclasses import dataclass
 from pathlib import Path
 from types import GeneratorType
-from typing import (Any, Callable, Dict, Iterable, List, Mapping, Optional,
-                    Sequence, Tuple, Type, Union, cast)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
 from .util import SimpleFrozenDict, SimpleFrozenList  # noqa: F401
-from .validation import validate_type  # noqa: F401 — public API
-from .validation import (Field, FieldInfo, Schema, ValidationError,
-                         create_schema, ensure_schema)
+from .validation import (
+    Field,
+    FieldInfo,
+    Schema,
+    ValidationError,
+    create_schema,
+    ensure_schema,
+    validate_type,  # noqa: F401 — public API
+)
 
 # Field used for positional arguments, e.g. [section.*.xyz]. The alias is
 # required for the schema (shouldn't clash with user-defined arg names)
