@@ -13,6 +13,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    Optional,
     Union,
     get_args,
     get_origin,
@@ -266,10 +267,11 @@ def resolve_type_hints(func):
         module = sys.modules.get(getattr(func, "__module__", None))
         globalns = vars(module) if module else None
         return get_type_hints(func, globalns=globalns)
-    except (NameError, AttributeError, TypeError):
+    except (NameError, AttributeError, TypeError, RecursionError):
         # NameError: unresolvable forward reference
         # AttributeError: module without expected attributes
         # TypeError: invalid annotation object
+        # RecursionError: self-referential types (Python 3.13+)
         return {}
 
 
@@ -792,6 +794,10 @@ def _extract_pydantic_fields(pydantic_cls):
         # pydantic v1 interface
         for name, pyd_field in pydantic_cls.__fields__.items():
             annotation = pyd_field.outer_type_
+            # pydantic v1 unwraps Optional[X] into outer_type_=X +
+            # allow_none=True.  Re-wrap so our validator sees the Union.
+            if getattr(pyd_field, "allow_none", False):
+                annotation = Optional[annotation]
             if pyd_field.required:
                 default = ...
             else:

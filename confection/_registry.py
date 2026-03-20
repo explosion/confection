@@ -279,7 +279,7 @@ class registry:
                 fields[name] = (nested, Field(field.default))
             elif _is_config_section(config[name]):
                 nested = cls._make_unresolved_schema(
-                    _make_dummy_schema(config[name]), config
+                    _make_dummy_schema(config[name]), config[name]
                 )
                 fields[name] = (nested, Field(...))
             else:
