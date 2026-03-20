@@ -7,6 +7,7 @@ for config values against function signatures.
 import collections.abc
 import inspect
 import sys
+import types
 from types import GeneratorType
 from typing import (
     Annotated,
@@ -271,8 +272,8 @@ def validate_type(value, annotation):
     if origin is Annotated or hasattr(annotation, "__metadata__"):
         return validate_type(value, get_args(annotation)[0])
 
-    # Union / Optional
-    if origin is Union:
+    # Union / Optional  (typing.Union and Python 3.10+ X | Y syntax)
+    if origin is Union or origin is types.UnionType:
         for arg in args:
             if validate_type(value, arg) is None:
                 return None
@@ -284,6 +285,10 @@ def validate_type(value, annotation):
         if value in args:
             return None
         return f"Input should be {' or '.join(repr(a) for a in args)}"
+
+    # NewType: unwrap to the supertype
+    if callable(annotation) and hasattr(annotation, "__supertype__"):
+        return validate_type(value, annotation.__supertype__)
 
     # Constrained types
     if annotation is StrictBool:
@@ -316,7 +321,6 @@ def validate_type(value, annotation):
                 annotation.model_config.get("alias_generator"),
             )
             if errors:
-                msgs = "; ".join(e.get("msg", "") for e in errors)
                 return f"Input should be an instance of {annotation.__name__}"
             return None
         return _validate_plain_type(value, annotation)
@@ -418,10 +422,49 @@ def _validate_generic(value, origin, args):
                     return f"Value for {k!r}: {err}"
         return None
 
-    # tuple / Tuple
+    # tuple / Tuple  —  Tuple[int, str] (fixed) vs Tuple[int, ...] (variable)
     if origin is tuple:
         if not isinstance(value, (tuple, list)):
             return "Input should be a valid tuple"
+        if args:
+            if len(args) == 2 and args[1] is Ellipsis:
+                # Tuple[X, ...] — variable-length, all elements same type
+                for i, item in enumerate(value):
+                    err = validate_type(item, args[0])
+                    if err:
+                        return f"Item {i}: {err}"
+            elif args != ((),):
+                # Tuple[X, Y, Z] — fixed-length positional
+                if len(value) != len(args):
+                    return (
+                        f"Expected {len(args)} items in tuple, got {len(value)}"
+                    )
+                for i, (item, expected) in enumerate(zip(value, args)):
+                    err = validate_type(item, expected)
+                    if err:
+                        return f"Item {i}: {err}"
+        return None
+
+    # set / Set[X]
+    if origin is set:
+        if not isinstance(value, set):
+            return "Input should be a valid set"
+        if args:
+            for item in value:
+                err = validate_type(item, args[0])
+                if err:
+                    return f"Set item: {err}"
+        return None
+
+    # frozenset / FrozenSet[X]
+    if origin is frozenset:
+        if not isinstance(value, frozenset):
+            return "Input should be a valid frozenset"
+        if args:
+            for item in value:
+                err = validate_type(item, args[0])
+                if err:
+                    return f"Frozenset item: {err}"
         return None
 
     # Sequence
@@ -443,11 +486,17 @@ def _validate_generic(value, origin, args):
             return None
         return "Input should be iterable"
 
-    # Mapping
+    # Mapping (covers Mapping, MutableMapping, OrderedDict, etc.)
     if isinstance(origin, type) and issubclass(origin, collections.abc.Mapping):
         if isinstance(value, collections.abc.Mapping):
             return None
         return "Input should be a valid mapping"
+
+    # AbstractSet (covers Set, FrozenSet, MutableSet ABCs)
+    if isinstance(origin, type) and issubclass(origin, collections.abc.Set):
+        if isinstance(value, collections.abc.Set):
+            return None
+        return "Input should be a valid set"
 
     # Iterator / Generator
     if isinstance(origin, type) and issubclass(
@@ -457,11 +506,21 @@ def _validate_generic(value, origin, args):
             return None
         return "Input should be an iterator"
 
-    # Type[X]
+    # Type[X] — check value is a class and optionally a subclass of X
     if origin is type:
-        if isinstance(value, type):
-            return None
-        return "Input should be a type"
+        if not isinstance(value, type):
+            return "Input should be a type"
+        if args and args[0] is not Any:
+            expected = args[0]
+            try:
+                if not issubclass(value, expected):
+                    return (
+                        f"Input should be a subclass of"
+                        f" {getattr(expected, '__name__', expected)}"
+                    )
+            except TypeError:
+                pass  # expected is not a class (e.g. Union) — skip
+        return None
 
     # For any other generic - try isinstance against origin
     if isinstance(origin, type):
