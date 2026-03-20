@@ -4,9 +4,9 @@ from typing import Literal
 
 import catalogue
 import pytest
-from pydantic import BaseModel, PositiveInt, StrictFloat
 
 from confection import Config, ConfigValidationError
+from confection._validation import PositiveInt, Schema, StrictBool, StrictFloat
 from confection.tests.util import Cat, make_tempdir, my_registry
 
 EXAMPLE_CONFIG = """
@@ -55,25 +55,25 @@ total_steps = 100000
 """
 
 
-class HelloIntsSchema(BaseModel):
+class HelloIntsSchema(Schema):
     hello: int
     world: int
     model_config = {"extra": "forbid"}
 
 
-class DefaultsSchema(BaseModel):
+class DefaultsSchema(Schema):
     required: int
     optional: str = "default value"
     model_config = {"extra": "forbid"}
 
 
-class LooseSchema(BaseModel):
+class LooseSchema(Schema):
     required: int
     optional: str = "default value"
     model_config = {"extra": "allow"}
 
 
-class ComplexSchema(BaseModel):
+class ComplexSchema(Schema):
     outer_req: int
     outer_opt: str = "default value"
 
@@ -388,11 +388,7 @@ def test_config_to_str_order():
 
 @pytest.mark.parametrize("d", [".", ":"])
 def test_config_interpolation(d):
-    """Test that config values are interpolated correctly. The parametrized
-    value is the final divider (${a.b} vs. ${a:b}). Both should now work and be
-    valid. The double {{ }} in the config strings are required to prevent the
-    references from being interpreted as an actual f-string variable.
-    """
+    """Test that config values are interpolated correctly."""
     c_str = """[a]\nfoo = "hello"\n\n[b]\nbar = ${foo}"""
     with pytest.raises(ConfigValidationError):
         Config().from_str(c_str)
@@ -423,11 +419,6 @@ def test_config_interpolation_lists():
     config = Config().from_str(c_str)
     assert config["c"]["d"] == [1, "hello 1", "world"]
     config = Config().from_str(c_str, interpolate=False)
-    # NOTE: This currently doesn't work, because we can't know how to JSON-load
-    # the uninterpolated list [${a.b}].
-    # assert config["c"]["d"] == ["${a.b}", "hello ${a.b}", "world"]
-    # config = config.interpolate()
-    # assert config["c"]["d"] == [1, "hello 1", "world"]
     c_str = """[a]\nb = 1\n\n[c]\nd = ["hello", ${a}]"""
     config = Config().from_str(c_str)
     assert config["c"]["d"] == ["hello", {"b": 1}]
@@ -444,11 +435,7 @@ def test_config_interpolation_lists():
 
 @pytest.mark.parametrize("d", [".", ":"])
 def test_config_interpolation_sections(d):
-    """Test that config sections are interpolated correctly. The parametrized
-    value is the final divider (${a.b} vs. ${a:b}). Both should now work and be
-    valid. The double {{ }} in the config strings are required to prevent the
-    references from being interpreted as an actual f-string variable.
-    """
+    """Test that config sections are interpolated correctly."""
     # Simple block references
     c_str = """[a]\nfoo = "hello"\nbar = "world"\n\n[b]\nc = ${a}"""
     config = Config().from_str(c_str)
@@ -512,8 +499,6 @@ def test_config_from_str_overrides():
     # Invalid keys and sections
     with pytest.raises(ConfigValidationError):
         Config().from_str(config_str, overrides={"f": 10})
-    # This currently isn't expected to work, because the dict in f.g is not
-    # interpreted as a section while the config is still just the configparser
     with pytest.raises(ConfigValidationError):
         Config().from_str(config_str, overrides={"f.g.x": "z"})
     # With variables (values)
@@ -530,11 +515,6 @@ def test_config_from_str_overrides():
 
 @pytest.mark.parametrize("d", [".", ":"])
 def test_config_no_interpolation(d):
-    """Test that interpolation is correctly preserved. The parametrized
-    value is the final divider (${a.b} vs. ${a:b}). Both should now work and be
-    valid. The double {{ }} in the config strings are required to prevent the
-    references from being interpreted as an actual f-string variable.
-    """
     numpy = pytest.importorskip("numpy")
     c_str = f"""[a]\nb = 1\n\n[c]\nd = ${{a{d}b}}\ne = \"hello${{a{d}b}}"\nf = ${{a}}"""
     config = Config().from_str(c_str, interpolate=False)

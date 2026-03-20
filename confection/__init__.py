@@ -11,6 +11,7 @@ from ._config import (  # noqa: F401
 )
 from ._errors import ConfigValidationError
 from ._registry import Promise, registry
+from ._validation import Schema
 from .util import SimpleFrozenDict, SimpleFrozenList
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "Promise",
     "registry",
     "ConfigValidationError",
+    "Schema",
     "SimpleFrozenDict",
     "SimpleFrozenList",
 ]

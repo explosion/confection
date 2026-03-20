@@ -1,6 +1,6 @@
-"""Hypothesis tests for parameter processing in schema inference.
+"""Tests for parameter processing in schema inference.
 
-Tests the functions that convert function parameters into Pydantic field definitions.
+Tests the functions that convert function parameters into field definitions.
 """
 
 import inspect
@@ -8,13 +8,10 @@ from typing import Any, Generator, Iterable, List, Sequence, Union
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic.fields import FieldInfo
 
+from confection._validation import FieldInfo
 from confection._registry import (
     ARGS_FIELD_ALIAS,
-    _is_iterable_type,
-    _is_sequence_type,
-    _reorder_union_for_generators,
     get_param_field,
     process_param_annotation,
     process_param_default,
@@ -27,11 +24,11 @@ from confection._registry import (
 # Simple/scalar types
 simple_types = st.sampled_from([int, str, float, bool, type(None)])
 
-# List/Sequence types (these consume iterators during validation)
+# List/Sequence types
 list_types = st.sampled_from([List, List[int], List[str], List[float]])
 sequence_types = st.sampled_from([Sequence, Sequence[int], Sequence[str]])
 
-# Generator/Iterable types (these should NOT consume iterators)
+# Generator/Iterable types
 generator_types = st.sampled_from(
     [
         Generator,
@@ -49,10 +46,8 @@ non_union_types = st.one_of(simple_types, list_types, generator_types)
 @st.composite
 def union_types(draw):
     """Generate Union types from 2-4 member types."""
-    # Draw 2-4 types for the union
     num_types = draw(st.integers(min_value=2, max_value=4))
     types = [draw(non_union_types) for _ in range(num_types)]
-    # Ensure we have at least 2 distinct types
     types = list(dict.fromkeys(types))  # Remove duplicates preserving order
     if len(types) < 2:
         types.append(draw(st.sampled_from([int, str, float])))
@@ -84,25 +79,20 @@ class TestProcessParamAnnotation:
 
     @given(annotation=list_types)
     def test_list_types_unchanged(self, annotation):
-        """List types without Union should pass through unchanged."""
+        """List types should pass through unchanged."""
         result = process_param_annotation(annotation)
         assert result == annotation
-
-    def test_union_with_generator_wrapped(self):
-        """Union with Generator should be wrapped with generator-safe validator."""
-        from typing import Annotated, get_args, get_origin
-
-        annotation = Union[float, List[float], Generator]
-        result = process_param_annotation(annotation)
-        # Should be wrapped in Annotated
-        assert get_origin(result) is Annotated
-        # First arg should be the original Union type
-        inner_type = get_args(result)[0]
-        assert get_origin(inner_type) is Union
 
     def test_union_without_generator_unchanged(self):
         """Union without Generator should be unchanged."""
         annotation = Union[int, str, float]
+        result = process_param_annotation(annotation)
+        assert result == annotation
+
+    def test_union_with_generator_unchanged(self):
+        """Union with Generator should also pass through unchanged
+        (no Pydantic wrapping needed)."""
+        annotation = Union[float, List[float], Generator]
         result = process_param_annotation(annotation)
         assert result == annotation
 
@@ -204,67 +194,8 @@ class TestGetParamField:
         name, (annotation, field_info) = get_param_field(
             "validate", bool, True, inspect.Parameter.POSITIONAL_OR_KEYWORD
         )
-        # Should be aliased to avoid shadowing Pydantic's validate
         assert name != "validate"
-        assert "validate" in name  # Should contain validate with some modification
-
-
-# =============================================================================
-# Tests for _reorder_union_for_generators
-# =============================================================================
-
-
-class TestReorderUnionForGenerators:
-    """Tests for _reorder_union_for_generators function."""
-
-    def test_non_union_unchanged(self):
-        """Non-Union types should be unchanged."""
-        assert _reorder_union_for_generators(int) == int
-        assert _reorder_union_for_generators(List[int]) == List[int]
-        assert _reorder_union_for_generators(Generator) == Generator
-
-    def test_union_no_generator_unchanged(self):
-        """Union without generators should be unchanged."""
-        annotation = Union[int, str, float]
-        result = _reorder_union_for_generators(annotation)
-        assert result == annotation
-
-    def test_union_no_sequence_unchanged(self):
-        """Union without sequences should be unchanged."""
-        annotation = Union[int, Generator, float]
-        result = _reorder_union_for_generators(annotation)
-        assert result == annotation
-
-    def test_union_generator_after_list_reordered(self):
-        """Union with Generator after List should be reordered."""
-        annotation = Union[float, List[float], Generator]
-        result = _reorder_union_for_generators(annotation)
-        args = result.__args__
-
-        # Find positions
-        gen_idx = None
-        list_idx = None
-        for i, arg in enumerate(args):
-            if _is_iterable_type(arg):
-                gen_idx = i
-            if _is_sequence_type(arg):
-                list_idx = i
-
-        assert gen_idx is not None
-        assert list_idx is not None
-        assert (
-            gen_idx < list_idx
-        ), f"Generator at {gen_idx} should be before List at {list_idx}"
-
-    def test_union_iterable_after_list_reordered(self):
-        """Union with Iterable after List should be reordered."""
-        annotation = Union[float, List[float], Iterable]
-        result = _reorder_union_for_generators(annotation)
-        args = result.__args__
-
-        # Note: Iterable is not an iterator type in our check, so this might not reorder
-        # Let's verify the actual behavior - just check the result is valid
-        assert args is not None
+        assert "validate" in name
 
 
 # =============================================================================
@@ -315,33 +246,5 @@ def test_var_positional_wraps_in_sequence(name, annotation):
         name, annotation, inspect.Parameter.empty, inspect.Parameter.VAR_POSITIONAL
     )
 
-    # Should use the ARGS_FIELD_ALIAS name
     assert field_name == ARGS_FIELD_ALIAS
-
-    # Annotation should be wrapped in Sequence
     assert hasattr(field_annotation, "__origin__")
-
-
-@given(annotation=union_types())
-@settings(max_examples=100)
-def test_union_with_generators_wrapped(annotation):
-    """Property test: Unions containing generators should be wrapped in Annotated."""
-    from typing import Annotated, get_args, get_origin
-
-    result = process_param_annotation(annotation)
-
-    # Check if annotation contains any generator types
-    has_generators = any(_is_iterable_type(arg) for arg in get_args(annotation))
-
-    if has_generators:
-        # Should be wrapped in Annotated
-        assert (
-            get_origin(result) is Annotated
-        ), f"Union with generators should be wrapped in Annotated, got {result}"
-        # First arg should be the original Union
-        inner = get_args(result)[0]
-        assert get_origin(inner) is Union
-    else:
-        # Should remain unchanged (or be wrapped for other reasons)
-        # Just verify it's still a valid type
-        assert result is not None

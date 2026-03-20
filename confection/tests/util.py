@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Generator, Generic, Iterable, List, Mapping, Optional, TypeVar, Union
 
 import catalogue
-from pydantic.types import StrictBool  # type: ignore
+
+from confection._validation import StrictBool
 
 import confection
 
@@ -126,7 +127,7 @@ def decaying(base_rate: float, repeat: int) -> List[float]:
 
 @my_registry.cats("mapping_cat.v1")
 def mapping_cat(mapping_table: Mapping[int, int], default: int = 0) -> str:
-    """Function with a Mapping parameter to test Pydantic 2 forward reference resolution."""
+    """Function with a Mapping parameter to test forward reference resolution."""
     return f"mapping with {len(mapping_table)} items, default={default}"
 
 

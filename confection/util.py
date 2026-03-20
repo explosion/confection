@@ -2,9 +2,6 @@ import functools
 from copy import deepcopy
 from typing import Any, Callable, Iterator, Protocol, TypeVar
 
-from pydantic import GetCoreSchemaHandler
-from pydantic_core import core_schema
-
 _DIn = TypeVar("_DIn")
 
 
@@ -29,26 +26,19 @@ def partial(
     return partial_func
 
 
-class Generator(Iterator):
+class _GeneratorMeta(type):
+    """Metaclass that makes isinstance checks accept any iterator/generator."""
+
+    def __instancecheck__(cls, instance):
+        return hasattr(instance, "__iter__") or hasattr(instance, "__next__")
+
+
+class Generator(metaclass=_GeneratorMeta):
     """Custom generator type. Used to annotate function arguments that accept
-    generators so they can be validated by pydantic (which doesn't support
-    iterators/iterables otherwise).
+    generators so they can be validated (accepts any iterable/iterator).
     """
 
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls,
-        _source_type: Any,
-        _handler: GetCoreSchemaHandler,
-    ) -> core_schema.CoreSchema:
-        return core_schema.with_info_plain_validator_function(cls.__validate__)
-
-    @classmethod
-    def __validate__(cls, v, info):
-        if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
-            raise TypeError("not a valid iterator")
-        else:
-            return v
+    pass
 
 
 DEFAULT_FROZEN_DICT_ERROR = (

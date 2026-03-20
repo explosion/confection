@@ -10,11 +10,11 @@ import srsly
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from numpy.testing import assert_allclose, assert_equal
-from pydantic import ValidationError
 
 from confection import Config
 from confection._config import try_load_json
 from confection._registry import make_func_schema
+from confection._validation import ValidationError
 from confection.tests.util import my_registry
 
 # =============================================================================
@@ -261,24 +261,9 @@ def nested_config(draw):
 
 @st.composite
 def config_with_positional_args(draw):
-    """Generate a config with positional args using [section.*.name] syntax.
-
-    Creates a section with 1-3 positional arg subsections that become a tuple.
-    Example:
-        [parent]
-        key = 1
-
-        [parent.*.first]
-        x = 10
-
-        [parent.*.second]
-        y = 20
-
-    Results in: {"parent": {"key": 1, "*": ({"x": 10}, {"y": 20})}}
-    """
+    """Generate a config with positional args using [section.*.name] syntax."""
     parent_name = draw(section_names)
 
-    # Parent section needs at least one field for the [parent] section to be created
     parent_fields = draw(
         st.dictionaries(
             field_names,
@@ -291,8 +276,6 @@ def config_with_positional_args(draw):
         )
     )
 
-    # Generate 1-3 positional arg sections with unique names
-    # Use a fixed pool of names to avoid expensive uniqueness checks
     positional_name_pool = ["pos1", "pos2", "pos3", "item1", "item2", "item3"]
     num_positional = draw(st.integers(min_value=1, max_value=3))
     positional_names = draw(
@@ -314,8 +297,6 @@ def config_with_positional_args(draw):
         )
         positional_contents.append(content)
 
-    # Build expected result - the "*" key stores a dict with names as keys
-    # (it becomes a tuple only during registry resolve())
     expected = dict(parent_fields)
     expected["*"] = {
         name: content for name, content in zip(positional_names, positional_contents)
@@ -332,12 +313,7 @@ def config_with_positional_args(draw):
 
 @st.composite
 def config_with_interpolation(draw):
-    """Generate a config with variable interpolation.
-
-    Creates a source section with values and a target section that
-    references some of those values via ${source.key} syntax.
-    """
-    # Generate source section with scalar values only (for simplicity)
+    """Generate a config with variable interpolation."""
     source_fields = draw(
         st.dictionaries(
             field_names,
@@ -350,12 +326,10 @@ def config_with_interpolation(draw):
         )
     )
 
-    # Pick which fields to reference
     source_keys = list(source_fields.keys())
     num_refs = draw(st.integers(min_value=1, max_value=len(source_keys)))
     ref_keys = draw(st.permutations(source_keys))[:num_refs]
 
-    # Build target section with references, tracking expected values
     target_fields = {}
     expected_target = {}
     for source_key in ref_keys:
@@ -363,7 +337,6 @@ def config_with_interpolation(draw):
         target_fields[target_field] = f"${{source.{source_key}}}"
         expected_target[target_field] = source_fields[source_key]
 
-    # Build the config dict (uninterpolated)
     config = {
         "source": source_fields,
         "target": target_fields,
@@ -376,8 +349,6 @@ def config_with_interpolation(draw):
 # Config String Strategy - generates INI-format config strings directly
 # =============================================================================
 
-# Values that can appear in a config string (INI format)
-# These are the literal string representations, not Python values
 ini_string_values = st.text(
     min_size=1,
     max_size=20,
@@ -389,55 +360,41 @@ ini_float_values = st.floats(
 ).map(lambda x: f"{x:.6g}")
 ini_bool_values = st.sampled_from(["true", "false"])
 
-# A single value in INI format
 ini_scalar_value = st.one_of(
-    # Quoted strings
     ini_string_values.map(lambda s: srsly.json_dumps(s)),
-    # Unquoted numbers
     ini_int_values,
     ini_float_values,
-    # Booleans
     ini_bool_values,
 )
 
-# A list in INI format: [val1, val2, ...]
 ini_list_value = st.lists(ini_scalar_value, min_size=0, max_size=5).map(
     lambda items: "[" + ", ".join(items) + "]"
 )
 
-# Any value in INI format
 ini_value = st.one_of(ini_scalar_value, ini_list_value)
 
 
 @st.composite
 def config_string(draw):
-    """Generate a config string in INI format.
-
-    Returns (config_str, expected_dict) where expected_dict is the parsed form.
-    """
-    # Generate 1-3 sections
+    """Generate a config string in INI format."""
     num_sections = draw(st.integers(min_value=1, max_value=3))
     sections = []
     expected = {}
 
     for _ in range(num_sections):
         section_name = draw(section_names)
-        # Ensure unique section names
         while section_name in expected:
             section_name = draw(section_names)
 
-        # Generate 1-5 fields per section
         num_fields = draw(st.integers(min_value=1, max_value=5))
         fields = []
         section_expected = {}
 
         for _ in range(num_fields):
             field_name = draw(field_names)
-            # Ensure unique field names within section
             while field_name in section_expected:
                 field_name = draw(field_names)
 
-            # Choose value type and generate both string and expected value
             value_type = draw(
                 st.sampled_from(["string", "int", "float", "bool", "list"])
             )
@@ -591,8 +548,6 @@ def test_positional_args_roundtrip(data):
     """Test that [section.*.name] positional args syntax roundtrips correctly."""
     parent_name, positional_names, parent_fields, positional_contents, expected = data
 
-    # Build config string manually since Config() from dict doesn't create the
-    # [section.*.name] syntax - it uses the tuple under "*" key
     lines = [f"[{parent_name}]"]
     for key, value in parent_fields.items():
         lines.append(f"{key} = {srsly.json_dumps(value)}")
@@ -674,23 +629,17 @@ def test_config_string_roundtrip(data):
 # =============================================================================
 # String Parsing Edge Cases
 # =============================================================================
-# These tests document known issues with string values that resemble JSON
-# primitives. When a string contains content that looks like a JSON value
-# followed by whitespace, the parser incorrectly converts it.
 
 
 @pytest.mark.parametrize(
     "value",
     [
-        # Strings with whitespace that look like numbers
         "0\n",
         "1\t",
         " 42",
         "42 ",
-        # Strings with whitespace that look like booleans
         "true\n",
         "false ",
-        # Strings with whitespace that look like null
         "null\n",
     ],
 )
@@ -705,7 +654,6 @@ def test_string_with_whitespace_stays_string(value):
 @pytest.mark.parametrize(
     "value",
     [
-        # Positive integers and floats - these work
         "123",
         "3.14",
         "0",
@@ -713,11 +661,7 @@ def test_string_with_whitespace_stays_string(value):
     ],
 )
 def test_numeric_string_stays_string(value):
-    """Strings that look like positive numbers stay strings.
-
-    These cases work because try_dump_json has special handling to double-quote
-    strings that match `value.replace(".", "", 1).isdigit()`.
-    """
+    """Strings that look like positive numbers stay strings."""
     cfg = Config({"section": {"field": value}})
     config_str = cfg.to_str()
     parsed = Config().from_str(config_str)
@@ -742,16 +686,11 @@ def test_negative_numeric_string_stays_string(value):
 # =============================================================================
 # Registry Resolution Tests
 # =============================================================================
-# Tests for configs with @registry references that get resolved to values
 
 
 @st.composite
 def config_with_catsie(draw):
-    """Generate a config with a catsie.v1 registered function.
-
-    catsie.v1 signature: catsie_v1(evil: StrictBool, cute: bool = True) -> str
-    Returns "scratch!" if evil else "meow"
-    """
+    """Generate a config with a catsie.v1 registered function."""
     evil = draw(st.booleans())
     cute = draw(st.booleans())
 
@@ -769,11 +708,7 @@ def config_with_catsie(draw):
 
 @st.composite
 def config_with_catsie_v2(draw):
-    """Generate a config with a catsie.v2 registered function.
-
-    catsie.v2 signature: catsie_v2(evil: StrictBool, cute: bool = True, cute_level: int = 1) -> str
-    Returns "scratch!" if evil, "meow <3" if cute_level > 2, else "meow"
-    """
+    """Generate a config with a catsie.v2 registered function."""
     evil = draw(st.booleans())
     cute = draw(st.booleans())
     cute_level = draw(st.integers(min_value=0, max_value=5))
@@ -835,18 +770,7 @@ def test_registry_roundtrip_with_resolve(data):
 
 @st.composite
 def multiple_registry_sections(draw):
-    """Generate a config with multiple sections containing registered functions.
-
-    Example structure:
-        [cat1]
-        @cats = "catsie.v1"
-        evil = false
-
-        [cat2]
-        @cats = "catsie.v2"
-        evil = true
-        cute_level = 3
-    """
+    """Generate a config with multiple sections containing registered functions."""
     cat1_evil = draw(st.booleans())
     cat2_evil = draw(st.booleans())
     cat2_cute_level = draw(st.integers(min_value=0, max_value=5))
@@ -889,12 +813,10 @@ def test_multiple_registry_sections_resolve(data):
 @settings(max_examples=20)
 def test_registry_fill_adds_defaults(evil, cute):
     """Test that registry.fill() adds default values."""
-    # Config without 'cute' parameter (has default)
     config = {"cat": {"@cats": "catsie.v1", "evil": evil}}
     cfg = Config(config)
     filled = my_registry.fill(cfg)
 
-    # Should have cute with default value
     assert filled["cat"]["cute"] is True
     assert filled["cat"]["evil"] == evil
 
@@ -902,7 +824,6 @@ def test_registry_fill_adds_defaults(evil, cute):
 # =============================================================================
 # Schema Inference Tests (make_func_schema / get_func_fields)
 # =============================================================================
-# Tests for inferring Pydantic schemas from function signatures
 
 
 def make_test_func_int(x: int) -> int:
@@ -938,7 +859,7 @@ def make_test_func_typed_list(x: list[int]) -> list:
 
 
 class TestMakeFuncSchema:
-    """Tests for make_func_schema inferring Pydantic schemas from functions."""
+    """Tests for make_func_schema inferring schemas from functions."""
 
     def test_schema_accepts_correct_int(self):
         """Schema accepts correct int type."""
