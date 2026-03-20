@@ -55,7 +55,7 @@ class Promise(Generic[_PromisedType]):
     var_args: List[Any]
     kwargs: Dict[str, Any]
     getter: Union[Callable[..., _PromisedType], catalogue.RegistryError]
-    schema: Optional[Type[Schema]]
+    arg_schema: Optional[Type[Schema]]
 
     @property
     def return_type(self) -> _PromisedType:
@@ -70,7 +70,7 @@ class Promise(Generic[_PromisedType]):
         if args:
             kwargs[ARGS_FIELD] = args
         try:
-            _ = self.schema.model_validate(kwargs)
+            _ = self.arg_schema.model_validate(kwargs)
         except ValidationError as e:
             raise ConfigValidationError(config=kwargs, errors=e.errors()) from None
 
@@ -85,7 +85,7 @@ class Promise(Generic[_PromisedType]):
             if args:
                 schema_args[ARGS_FIELD] = args
             try:
-                _ = self.schema.model_validate(schema_args)
+                _ = self.arg_schema.model_validate(schema_args)
             except ValidationError as e:
                 raise ConfigValidationError(config=kwargs, errors=e.errors()) from None
         return self.getter(*args, **kwargs)  # type: ignore
@@ -110,7 +110,7 @@ class Promise(Generic[_PromisedType]):
             var_args=var_args,
             kwargs=kwargs,
             getter=getter,
-            schema=schema,
+            arg_schema=schema,
         )
         return output
 
