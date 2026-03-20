@@ -9,7 +9,9 @@ import catalogue
 import pytest
 
 if sys.version_info >= (3, 14):
-    pytest.skip("pydantic v1 is not compatible with Python 3.14+", allow_module_level=True)
+    pytest.skip(
+        "pydantic v1 is not compatible with Python 3.14+", allow_module_level=True
+    )
 
 try:
     from pydantic.v1 import BaseModel, PositiveInt, StrictFloat, constr
