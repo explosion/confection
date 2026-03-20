@@ -9,7 +9,7 @@ from typing import Any, Generator, Iterable, List, Sequence, Union
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from confection._validation import FieldInfo
+from confection.validation import FieldInfo
 from confection._registry import (
     ARGS_FIELD_ALIAS,
     get_param_field,

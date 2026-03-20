@@ -31,7 +31,7 @@ except ImportError:
     )
 
 from confection import ConfigValidationError
-from confection._validation import Schema, ValidationError, ensure_schema
+from confection.validation import Schema, ValidationError, ensure_schema
 from confection.tests.util import my_registry
 
 

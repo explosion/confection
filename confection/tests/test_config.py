@@ -6,7 +6,7 @@ import catalogue
 import pytest
 
 from confection import Config, ConfigValidationError
-from confection._validation import PositiveInt, Schema, StrictBool, StrictFloat
+from confection.validation import PositiveInt, Schema, StrictBool, StrictFloat
 from confection.tests.util import Cat, make_tempdir, my_registry
 
 EXAMPLE_CONFIG = """

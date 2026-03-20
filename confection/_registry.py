@@ -27,7 +27,7 @@ from ._config import (
     Config,
 )
 from ._errors import ConfigValidationError
-from ._validation import (
+from .validation import (
     Field,
     FieldInfo,
     Schema,

@@ -6,7 +6,7 @@ import catalogue
 import pytest
 
 from confection import ConfigValidationError
-from confection._validation import PositiveInt, Schema, StrictBool, ValidationError
+from confection.validation import PositiveInt, Schema, StrictBool, ValidationError
 from confection.tests.util import Cat, my_registry
 from confection.util import Generator, partial
 

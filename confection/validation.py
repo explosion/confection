@@ -149,6 +149,54 @@ class Schema:
                 result_data[data_key] = field.default
         return _ValidatedResult(result_data)
 
+    @classmethod
+    def from_function(
+        cls,
+        func,
+        *,
+        config=None,
+    ):
+        """Build a Schema subclass from a function's signature.
+
+        Each parameter becomes a field.  The annotation is used as the type
+        (defaulting to ``Any`` when missing) and the default value is
+        preserved (parameters without defaults become required fields).
+
+        ``*args`` parameters are wrapped in ``Sequence[annotation]`` and
+        stored under the ``VARIABLE_POSITIONAL_ARGS`` field name.
+
+        Forward-reference annotations are resolved via
+        ``typing.get_type_hints`` against the function's module namespace.
+        """
+        from typing import Sequence as _Seq
+
+        if config is None:
+            config = {"extra": "forbid", "arbitrary_types_allowed": True}
+
+        resolved = resolve_type_hints(func)
+        fields = {}
+        for param in inspect.signature(func).parameters.values():
+            annotation = resolved.get(param.name, param.annotation)
+            if annotation is inspect.Parameter.empty:
+                annotation = Any
+            if param.default is inspect.Parameter.empty:
+                default = ...
+            else:
+                default = param.default
+            if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                annotation = _Seq[annotation]  # type: ignore[valid-type]
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                continue
+            field = FieldInfo(default=default)
+            field.annotation = annotation
+            fields[param.name] = field
+
+        return create_schema(
+            func.__name__,
+            __config__=config,
+            **{name: (f.annotation, f) for name, f in fields.items()},
+        )
+
     def model_dump(self):
         """Convert instance to dict."""
         result = {}

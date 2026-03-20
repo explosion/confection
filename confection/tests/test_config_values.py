@@ -15,7 +15,7 @@ from numpy.testing import assert_allclose, assert_equal
 from confection import Config
 from confection._config import try_load_json
 from confection._registry import make_func_schema
-from confection._validation import ValidationError
+from confection.validation import ValidationError
 from confection.tests.util import my_registry
 
 # =============================================================================

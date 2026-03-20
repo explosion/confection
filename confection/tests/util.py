@@ -11,7 +11,7 @@ from typing import Generator, Generic, Iterable, List, Mapping, Optional, TypeVa
 
 import catalogue
 
-from confection._validation import StrictBool
+from confection.validation import StrictBool
 
 import confection
 
