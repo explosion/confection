@@ -13,7 +13,6 @@ from types import GeneratorType
 from typing import (
     Annotated,
     Any,
-    Literal,
     Optional,
     TypeVar,
     Union,
@@ -21,6 +20,9 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+
+from .typeguard_checkers import TypeCheckError as _TypeCheckError
+from .typeguard_checkers import check_type as _typeguard_check_type
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
@@ -329,6 +331,15 @@ def _error_type_for(annotation):
     return "value_error"
 
 
+def _type_display(annotation):
+    """Human-readable name for a type."""
+    if annotation is type(None):
+        return "None"
+    if hasattr(annotation, "__name__"):
+        return annotation.__name__
+    return str(annotation)
+
+
 def validate_type(value, annotation):
     """Validate value against a type annotation.
 
@@ -346,7 +357,6 @@ def validate_type(value, annotation):
         return None
 
     origin = get_origin(annotation)
-    args = get_args(annotation)
 
     # Annotated[X, ...] -> validate against X, respecting Strict metadata
     # get_origin returns None for Annotated in Python 3.10, so also check __metadata__
@@ -375,19 +385,30 @@ def validate_type(value, annotation):
                 return None
         return validate_type(value, inner_type)
 
-    # Union / Optional  (typing.Union and Python 3.10+ X | Y syntax)
+    # Constrained types (confection-specific, not handled by typeguard)
+    if annotation is StrictBool:
+        if type(value) is not bool:
+            return "Input should be a valid boolean"
+        return None
+
+    if annotation is PositiveInt:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            return "Input should be a positive integer, greater than 0"
+        return None
+
+    if annotation is StrictFloat:
+        if type(value) is not float:
+            return "Input should be a valid float"
+        return None
+
+    # Union / Optional — must go through validate_type per member so
+    # confection-specific types (StrictBool, PositiveInt, etc.) are handled.
     if origin is Union or origin is types.UnionType:
-        for arg in args:
+        for arg in get_args(annotation):
             if validate_type(value, arg) is None:
                 return None
-        type_names = ", ".join(_type_display(a) for a in args)
+        type_names = ", ".join(_type_display(a) for a in get_args(annotation))
         return f"Input should be valid for union type: {type_names}"
-
-    # Literal
-    if origin is Literal:
-        if value in args:
-            return None
-        return f"Input should be {' or '.join(repr(a) for a in args)}"
 
     # NewType: unwrap to the supertype
     if callable(annotation) and hasattr(annotation, "__supertype__"):
@@ -405,29 +426,9 @@ def validate_type(value, annotation):
             return f"Input should be valid for: {names}"
         return None  # unconstrained TypeVar accepts anything
 
-    # Constrained types
-    if annotation is StrictBool:
-        if type(value) is not bool:
-            return "Input should be a valid boolean"
-        return None
-
-    if annotation is PositiveInt:
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            return "Input should be a positive integer, greater than 0"
-        return None
-
-    if annotation is StrictFloat:
-        if type(value) is not float:
-            return "Input should be a valid float"
-        return None
-
-    # Generic types
-    if origin is not None:
-        return _validate_generic(value, origin, args)
-
-    # Plain types
-    if isinstance(annotation, type):
-        # If annotation is a Schema subclass and value is a dict, validate against it
+    # Plain types with confection-specific coercion (int/float accept strings,
+    # Path accepts strings, pydantic validator hooks, Schema dicts)
+    if isinstance(annotation, type) and origin is None:
         if issubclass(annotation, Schema) and isinstance(value, dict):
             errors = _validate_schema(
                 value,
@@ -440,8 +441,56 @@ def validate_type(value, annotation):
             return None
         return _validate_plain_type(value, annotation)
 
-    # Unknown annotation - accept
+    # Delegate everything else (generics, Literal, etc.) to vendored typeguard.
+    return _check_with_typeguard(value, annotation)
+
+
+def _check_with_typeguard(value, annotation):
+    """Delegate type checking to the vendored typeguard module.
+
+    Returns None if valid, or an error message string if invalid.
+    """
+    try:
+        _typeguard_check_type(value, annotation)
+    except _TypeCheckError as exc:
+        return str(exc)
     return None
+
+
+def _confection_leaf_checker(value, origin_type, args, memo):
+    """Checker for types where confection has special coercion/validation."""
+    err = _validate_plain_type(value, origin_type)
+    if err is not None:
+        raise _TypeCheckError(err)
+
+
+def _confection_checker_lookup(origin_type, args, extras):
+    """Lookup function registered with typeguard that intercepts types
+    confection handles specially — plain scalars with coercion, pydantic
+    constrained types with validator hooks, etc."""
+    if origin_type in (int, float, str, bool):
+        return _confection_leaf_checker
+    if origin_type in (StrictBool, StrictFloat, PositiveInt):
+        return _confection_leaf_checker
+    if isinstance(origin_type, type) and issubclass(origin_type, PurePath):
+        return _confection_leaf_checker
+    # Pydantic types with validator hooks (e.g. pydantic.v1.types.PositiveInt)
+    if isinstance(origin_type, type) and (
+        hasattr(origin_type, "__get_validators__")
+        or hasattr(origin_type, "__get_pydantic_core_schema__")
+    ):
+        return _confection_leaf_checker
+    return None
+
+
+def _register_confection_checkers():
+    from . import typeguard_checkers as _tg
+
+    # Insert at the front so confection's lookup takes priority
+    _tg.checker_lookup_functions.insert(0, _confection_checker_lookup)
+
+
+_register_confection_checkers()
 
 
 def _validate_plain_type(value, typ):
@@ -585,157 +634,6 @@ class _PydanticV1FieldShim:
     def __init__(self, typ):
         self.type_ = typ
 
-
-def _validate_generic(value, origin, args):
-    """Validate value against a generic type (List[X], Dict[K,V], etc.)."""
-    # Callable
-    if origin is collections.abc.Callable:
-        if callable(value):
-            return None
-        return "Input should be callable"
-
-    # list / List[X]
-    if origin is list:
-        if not isinstance(value, list):
-            return "Input should be a valid list"
-        if args:
-            for i, item in enumerate(value):
-                err = validate_type(item, args[0])
-                if err:
-                    return f"Item {i}: {err}"
-        return None
-
-    # dict / Dict[K, V]
-    if origin is dict:
-        if not isinstance(value, dict):
-            return "Input should be a valid dictionary"
-        if args and len(args) == 2:
-            for k, v in value.items():
-                err = validate_type(k, args[0])
-                if err:
-                    return f"Key {k!r}: {err}"
-                err = validate_type(v, args[1])
-                if err:
-                    return f"Value for {k!r}: {err}"
-        return None
-
-    # tuple / Tuple  —  Tuple[int, str] (fixed) vs Tuple[int, ...] (variable)
-    if origin is tuple:
-        if not isinstance(value, (tuple, list)):
-            return "Input should be a valid tuple"
-        if args:
-            if len(args) == 2 and args[1] is Ellipsis:
-                # Tuple[X, ...] — variable-length, all elements same type
-                for i, item in enumerate(value):
-                    err = validate_type(item, args[0])
-                    if err:
-                        return f"Item {i}: {err}"
-            elif args != ((),):
-                # Tuple[X, Y, Z] — fixed-length positional
-                if len(value) != len(args):
-                    return f"Expected {len(args)} items in tuple, got {len(value)}"
-                for i, (item, expected) in enumerate(zip(value, args)):
-                    err = validate_type(item, expected)
-                    if err:
-                        return f"Item {i}: {err}"
-        return None
-
-    # set / Set[X]
-    if origin is set:
-        if not isinstance(value, set):
-            return "Input should be a valid set"
-        if args:
-            for item in value:
-                err = validate_type(item, args[0])
-                if err:
-                    return f"Set item: {err}"
-        return None
-
-    # frozenset / FrozenSet[X]
-    if origin is frozenset:
-        if not isinstance(value, frozenset):
-            return "Input should be a valid frozenset"
-        if args:
-            for item in value:
-                err = validate_type(item, args[0])
-                if err:
-                    return f"Frozenset item: {err}"
-        return None
-
-    # Sequence
-    if origin is collections.abc.Sequence:
-        if isinstance(value, (list, tuple)):
-            if args:
-                for i, item in enumerate(value):
-                    err = validate_type(item, args[0])
-                    if err:
-                        return f"Item {i}: {err}"
-            return None
-        if isinstance(value, str):
-            return None
-        return "Input should be a valid sequence"
-
-    # Iterable
-    if origin is collections.abc.Iterable:
-        if hasattr(value, "__iter__"):
-            return None
-        return "Input should be iterable"
-
-    # Mapping (covers Mapping, MutableMapping, OrderedDict, etc.)
-    if isinstance(origin, type) and issubclass(origin, collections.abc.Mapping):
-        if isinstance(value, collections.abc.Mapping):
-            return None
-        return "Input should be a valid mapping"
-
-    # AbstractSet (covers Set, FrozenSet, MutableSet ABCs)
-    if isinstance(origin, type) and issubclass(origin, collections.abc.Set):
-        if isinstance(value, collections.abc.Set):
-            return None
-        return "Input should be a valid set"
-
-    # Iterator / Generator
-    if isinstance(origin, type) and issubclass(
-        origin, (collections.abc.Iterator, collections.abc.Generator)
-    ):
-        if hasattr(value, "__next__") or hasattr(value, "__iter__"):
-            return None
-        return "Input should be an iterator"
-
-    # Type[X] — check value is a class and optionally a subclass of X
-    if origin is type:
-        if not isinstance(value, type):
-            return "Input should be a type"
-        if args and args[0] is not Any:
-            expected = args[0]
-            try:
-                if not issubclass(value, expected):
-                    return (
-                        f"Input should be a subclass of"
-                        f" {getattr(expected, '__name__', expected)}"
-                    )
-            except TypeError:
-                pass  # expected is not a class (e.g. Union) — skip
-        return None
-
-    # For any other generic - try isinstance against origin
-    if isinstance(origin, type):
-        try:
-            if isinstance(value, origin):
-                return None
-        except TypeError:
-            return None
-        return f"Input should be an instance of {origin.__name__}"
-
-    return None
-
-
-def _type_display(annotation):
-    """Human-readable name for a type."""
-    if annotation is type(None):
-        return "None"
-    if hasattr(annotation, "__name__"):
-        return annotation.__name__
-    return str(annotation)
 
 
 # === Schema Validation ===
