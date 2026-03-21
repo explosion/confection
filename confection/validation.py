@@ -349,9 +349,7 @@ def validate_type(value, annotation):
         inner_type = get_args(annotation)[0]
         metadata = getattr(annotation, "__metadata__", ())
         strict = any(
-            getattr(m, "strict", False)
-            for m in metadata
-            if hasattr(m, "strict")
+            getattr(m, "strict", False) for m in metadata if hasattr(m, "strict")
         )
         if strict:
             if inner_type is int:
