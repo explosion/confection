@@ -7,6 +7,7 @@ for config values against function signatures.
 import collections.abc
 import inspect
 import sys
+from enum import Enum
 from pathlib import PurePath
 from types import GeneratorType
 from typing import Any, Optional, get_type_hints
@@ -419,6 +420,15 @@ def _has_strict_extras(extras):
     )
 
 
+def _confection_str_enum_checker(value, origin_type, args, memo):
+    """Checker for str enums — accept a string if it's a valid member value."""
+    try:
+        origin_type(value)
+    except (ValueError, KeyError):
+        members = ", ".join(repr(m.value) for m in origin_type)
+        raise _TypeCheckError(f"is not a valid {origin_type.__name__}: expected one of {members}")
+
+
 def _confection_checker_lookup(origin_type, args, extras):
     """Lookup function registered with typeguard that intercepts types
     confection handles specially — plain scalars with coercion, pydantic
@@ -439,6 +449,9 @@ def _confection_checker_lookup(origin_type, args, extras):
         return _confection_leaf_checker
     if isinstance(origin_type, type) and issubclass(origin_type, Schema):
         return _confection_schema_checker
+    # str enums — accept plain strings that are valid members
+    if isinstance(origin_type, type) and issubclass(origin_type, str) and issubclass(origin_type, Enum):
+        return _confection_str_enum_checker
     # Pydantic types with validator hooks (e.g. pydantic.v1.types.PositiveInt)
     if isinstance(origin_type, type) and (
         hasattr(origin_type, "__get_validators__")
