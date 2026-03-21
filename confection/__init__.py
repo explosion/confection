@@ -29,6 +29,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypeVar,
     Union,
     cast,
     get_type_hints,
@@ -201,6 +202,9 @@ def get_configparser(interpolate: bool = True) -> ConfigParser:
     return config
 
 
+_ConfigSelf = TypeVar("_ConfigSelf", bound="Config")
+
+
 class Config(dict):
     """This class holds the model and training configuration and can load and
     save the TOML-style configuration format from/to a string, file or bytes.
@@ -209,15 +213,15 @@ class Config(dict):
     """
 
     is_interpolated: bool
-    section_order: list[str]
+    section_order: Sequence[str]
     _sections: dict
 
     def __init__(
         self,
-        data: Optional[Union[Dict[str, Any], "ConfigParser", "Config"]] = None,
+        data: Optional[Union[Mapping[str, Any], "ConfigParser", "Config"]] = None,
         *,
         is_interpolated: Optional[bool] = None,
-        section_order: Optional[List[str]] = None,
+        section_order: Optional[Sequence[str]] = None,
     ) -> None:
         """Initialize a new Config object with optional data."""
         dict.__init__(self)
@@ -246,13 +250,13 @@ class Config(dict):
         # Update with data
         self.update(self._sort(data))
 
-    def interpolate(self) -> "Config":
+    def interpolate(self: _ConfigSelf) -> _ConfigSelf:
         """Interpolate a config. Returns a copy of the object."""
         # This is currently the most effective way because we need our custom
         # to_str logic to run in order to re-serialize the values so we can
         # interpolate them again. ConfigParser.read_dict will just call str()
         # on all values, which isn't enough.
-        return Config().from_str(self.to_str())
+        return type(self)().from_str(self.to_str())
 
     def interpret_config(self, config: "ConfigParser") -> None:
         """Interpret a config, parse nested sections and parse the values
@@ -372,28 +376,31 @@ class Config(dict):
             raise ConfigValidationError(errors=err, desc=err_desc)
         return value
 
-    def copy(self) -> "Config":
+    def copy(self: _ConfigSelf) -> _ConfigSelf:
         """Deepcopy the config."""
         try:
             config = copy.deepcopy(self)
         except Exception as e:
             raise ValueError(f"Couldn't deep-copy config: {e}") from e
-        return Config(
+        return type(self)(
             config,
             is_interpolated=self.is_interpolated,
             section_order=self.section_order,
         )
 
     def merge(
-        self, updates: Union[Dict[str, Any], "Config"], remove_extra: bool = False
-    ) -> "Config":
+        self: _ConfigSelf,
+        updates: Union[Mapping[str, Any], "Config"],
+        remove_extra: bool = False,
+    ) -> _ConfigSelf:
         """Deep merge the config with updates, using current as defaults."""
         defaults = self.copy()
-        updates = Config(updates).copy()
-        merged = deep_merge_configs(updates, defaults, remove_extra=remove_extra)
-        return Config(
+        updates_config = Config(updates).copy()
+        merged = deep_merge_configs(updates_config, defaults, remove_extra=remove_extra)
+        return type(self)(
             merged,
-            is_interpolated=defaults.is_interpolated and updates.is_interpolated,
+            is_interpolated=defaults.is_interpolated
+            and updates_config.is_interpolated,
             section_order=defaults.section_order,
         )
 
@@ -411,7 +418,7 @@ class Config(dict):
         )
         return dict(sorted(data.items(), key=sort_key))
 
-    def _set_overrides(self, config: "ConfigParser", overrides: Dict[str, Any]) -> None:
+    def _set_overrides(self, config: "ConfigParser", overrides: Mapping[str, Any]) -> None:
         """Set overrides in the ConfigParser before config is interpreted."""
         err_title = "Error parsing config overrides"
         for key, value in overrides.items():
@@ -438,8 +445,12 @@ class Config(dict):
             raise ConfigValidationError(errors=err, title=err_title)
 
     def from_str(
-        self, text: str, *, interpolate: bool = True, overrides: Dict[str, Any] = {}
-    ) -> "Config":
+        self: _ConfigSelf,
+        text: str,
+        *,
+        interpolate: bool = True,
+        overrides: Mapping[str, Any] = {},
+    ) -> _ConfigSelf:
         """Load the config from a string."""
         config = get_configparser(interpolate=interpolate)
         if overrides:
@@ -497,12 +508,12 @@ class Config(dict):
         return self.to_str(interpolate=interpolate).encode("utf8")
 
     def from_bytes(
-        self,
+        self: _ConfigSelf,
         bytes_data: bytes,
         *,
         interpolate: bool = True,
-        overrides: Dict[str, Any] = {},
-    ) -> "Config":
+        overrides: Mapping[str, Any] = {},
+    ) -> _ConfigSelf:
         """Load the config from a byte string."""
         return self.from_str(
             bytes_data.decode("utf8"), interpolate=interpolate, overrides=overrides
@@ -515,12 +526,12 @@ class Config(dict):
             file_.write(self.to_str(interpolate=interpolate))
 
     def from_disk(
-        self,
+        self: _ConfigSelf,
         path: Union[str, Path],
         *,
         interpolate: bool = True,
-        overrides: Dict[str, Any] = {},
-    ) -> "Config":
+        overrides: Mapping[str, Any] = {},
+    ) -> _ConfigSelf:
         """Load config from a file."""
         path = Path(path) if isinstance(path, str) else path
         with path.open("r", encoding="utf8") as file_:
@@ -553,7 +564,7 @@ def try_load_json(value: str) -> Any:
         return value
 
 
-def try_dump_json(value: Any, data: Union[Dict[str, dict], Config, str] = "") -> str:
+def try_dump_json(value: Any, data: Union[Mapping[str, Any], Config, str] = "") -> str:
     """Dump a config value as JSON and output user-friendly error if it fails."""
     # Special case if we have a variable: it's already a string so don't dump
     # to preserve ${x:y} vs. "${x:y}"
@@ -620,12 +631,15 @@ def deep_merge_configs(
     return config
 
 
+_CVESelf = TypeVar("_CVESelf", bound="ConfigValidationError")
+
+
 class ConfigValidationError(ValueError):
     def __init__(
         self,
         *,
-        config: Optional[Union[Config, Dict[str, Dict[str, Any]], str]] = None,
-        errors: Union[Sequence[Mapping[str, Any]], Iterable[Dict[str, Any]]] = tuple(),
+        config: Optional[Union[Config, Mapping[str, Any], str]] = None,
+        errors: Iterable[Mapping[str, Any]] = tuple(),
         title: Optional[str] = "Config validation error",
         desc: Optional[str] = None,
         parent: Optional[str] = None,
@@ -676,13 +690,13 @@ class ConfigValidationError(ValueError):
 
     @classmethod
     def from_error(
-        cls,
+        cls: Type[_CVESelf],
         err: "ConfigValidationError",
         title: Optional[str] = None,
         desc: Optional[str] = None,
         parent: Optional[str] = None,
         show_config: Optional[bool] = None,
-    ) -> "ConfigValidationError":
+    ) -> _CVESelf:
         """Create a new ConfigValidationError based on an existing error, e.g.
         to re-raise it with different settings. If no overrides are provided,
         the values from the original error are used.
@@ -829,10 +843,10 @@ class registry:
     @classmethod
     def resolve(
         cls,
-        config: Union[Config, Dict[str, Dict[str, Any]]],
+        config: Union[Config, Mapping[str, Mapping[str, Any]]],
         *,
         schema: Type[Schema] = EmptySchema,
-        overrides: Dict[str, Any] = {},
+        overrides: Mapping[str, Any] = {},
         validate: bool = True,
     ) -> Dict[str, Any]:
         schema = ensure_schema(schema)
@@ -844,12 +858,12 @@ class registry:
     @classmethod
     def fill(
         cls,
-        config: Union[Config, Dict[str, Dict[str, Any]]],
+        config: Union[Config, Mapping[str, Mapping[str, Any]]],
         *,
         schema: Type[Schema] = EmptySchema,
-        overrides: Dict[str, Any] = {},
+        overrides: Mapping[str, Any] = {},
         validate: bool = True,
-    ):
+    ) -> Config:
         schema = ensure_schema(schema)
         _, filled = cls._make(
             config, schema=schema, overrides=overrides, validate=validate, resolve=False
@@ -859,10 +873,10 @@ class registry:
     @classmethod
     def _make(
         cls,
-        config: Union[Config, Dict[str, Dict[str, Any]]],
+        config: Union[Config, Mapping[str, Mapping[str, Any]]],
         *,
         schema: Type[Schema] = EmptySchema,
-        overrides: Dict[str, Any] = {},
+        overrides: Mapping[str, Any] = {},
         resolve: bool = True,
         validate: bool = True,
     ) -> Tuple[Dict[str, Any], Config]:
@@ -912,7 +926,7 @@ class registry:
         validate: bool = True,
         resolve: bool = True,
         parent: str = "",
-        overrides: Dict[str, Dict[str, Any]] = {},
+        overrides: Mapping[str, Any] = {},
     ) -> Tuple[
         Union[Dict[str, Any], Config], Union[Dict[str, Any], Config], Dict[str, Any]
     ]:
@@ -1083,7 +1097,7 @@ class registry:
         return filled, final
 
     @classmethod
-    def _validate_overrides(cls, filled: Config, overrides: Dict[str, Any]):
+    def _validate_overrides(cls, filled: Config, overrides: Mapping[str, Any]):
         """Validate overrides against a filled config to make sure there are
         no references to properties that don't exist and weren't used."""
         error_msg = "Invalid override: config value doesn't exist"
@@ -1095,7 +1109,7 @@ class registry:
             raise ConfigValidationError(config=filled, errors=errors)
 
     @classmethod
-    def _is_in_config(cls, prop: str, config: Union[Dict[str, Any], Config]):
+    def _is_in_config(cls, prop: str, config: Union[Mapping[str, Any], Config]):
         """Check whether a nested config property like "section.subsection.key"
         is in a given config."""
         tree = prop.split(".")
@@ -1121,7 +1135,7 @@ class registry:
         return False
 
     @classmethod
-    def get_constructor(cls, obj: Dict[str, Any]) -> Tuple[str, str]:
+    def get_constructor(cls, obj: Mapping[str, Any]) -> Tuple[str, str]:
         id_keys = [k for k in obj.keys() if k.startswith("@")]
         if len(id_keys) != 1:
             err_msg = f"A block can only contain one function registry reference. Got: {id_keys}"
@@ -1132,7 +1146,7 @@ class registry:
             return (key[1:], value)
 
     @classmethod
-    def parse_args(cls, obj: Dict[str, Any]) -> Tuple[List[Any], Dict[str, Any]]:
+    def parse_args(cls, obj: Mapping[str, Any]) -> Tuple[List[Any], Dict[str, Any]]:
         args = []
         kwargs = {}
         for key, value in obj.items():
@@ -1147,7 +1161,7 @@ class registry:
 
     @classmethod
     def make_promise_schema(
-        cls, obj: Dict[str, Any], *, resolve: bool = True
+        cls, obj: Mapping[str, Any], *, resolve: bool = True
     ) -> Type[Schema]:
         """Create a schema for a promise dict (referencing a registry function)
         by inspecting the function signature.
