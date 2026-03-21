@@ -902,7 +902,11 @@ class registry:
         if not is_interpolated:
             config = Config(orig_config).interpolate()
         filled, _, resolved = cls._fill(
-            config, schema, validate=validate, overrides=overrides, resolve=resolve  # type: ignore[arg-type]
+            config,  # type: ignore[arg-type]
+            schema,
+            validate=validate,
+            overrides=overrides,
+            resolve=resolve,
         )
         filled = Config(filled, section_order=section_order)
         # Check that overrides didn't include invalid properties not in config
