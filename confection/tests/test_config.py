@@ -1426,21 +1426,17 @@ def test_config_interpolates(greeting, value, expected):
         [342, "hello ${vars.a}", "hello 342"],
         ["everyone", "hello ${vars.a}", "hello everyone"],
         ["tout le monde", "hello ${vars.a}", "hello tout le monde"],
-        pytest.param("42", "hello ${vars.a}", "hello 42", marks=pytest.mark.xfail),
+        ["42", "hello ${vars.a}", "hello 42"],
         # substituting part of a implicit string inside a list
         [342, "[1, hello ${vars.a}, 3]", "hello 342"],
         ["everyone", "[1, hello ${vars.a}, 3]", "hello everyone"],
         ["tout le monde", "[1, hello ${vars.a}, 3]", "hello tout le monde"],
-        pytest.param(
-            "42", "[1, hello ${vars.a}, 3]", "hello 42", marks=pytest.mark.xfail
-        ),
+        ["42", "[1, hello ${vars.a}, 3]", "hello 42"],
         # substituting part of a explicit string inside a list
         [342, "[1, 'hello ${vars.a}', '3']", "hello 342"],
         ["everyone", "[1, 'hello ${vars.a}', '3']", "hello everyone"],
         ["tout le monde", "[1, 'hello ${vars.a}', '3']", "hello tout le monde"],
-        pytest.param(
-            "42", "[1, 'hello ${vars.a}', '3']", "hello 42", marks=pytest.mark.xfail
-        ),
+        ["42", "[1, 'hello ${vars.a}', '3']", "hello 42"],
         # more complicated example
         [342, "[{'name':'x','script':['hello ${vars.a}']}]", "hello 342"],
         ["everyone", "[{'name':'x','script':['hello ${vars.a}']}]", "hello everyone"],
@@ -1449,12 +1445,7 @@ def test_config_interpolates(greeting, value, expected):
             "[{'name':'x','script':['hello ${vars.a}']}]",
             "hello tout le monde",
         ],
-        pytest.param(
-            "42",
-            "[{'name':'x','script':['hello ${vars.a}']}]",
-            "hello 42",
-            marks=pytest.mark.xfail,
-        ),
+        ["42", "[{'name':'x','script':['hello ${vars.a}']}]", "hello 42"],
         # fmt: on
     ],
 )
