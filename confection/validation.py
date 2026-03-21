@@ -11,9 +11,12 @@ from pathlib import PurePath
 from types import GeneratorType
 from typing import Any, Optional, get_type_hints
 
+import warnings
+
 from typeguard import TypeCheckError as _TypeCheckError
 from typeguard import check_type as _typeguard_check_type
 from typeguard._config import CollectionCheckStrategy
+from typeguard._exceptions import TypeHintWarning
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
@@ -347,14 +350,16 @@ def _check_with_typeguard(value, annotation):
 
     Returns None if valid, or an error message string if invalid.
     """
-    try:
-        _typeguard_check_type(
-            value,
-            annotation,
-            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-        )
-    except _TypeCheckError as exc:
-        return str(exc)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", TypeHintWarning)
+        try:
+            _typeguard_check_type(
+                value,
+                annotation,
+                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+            )
+        except _TypeCheckError as exc:
+            return str(exc)
     return None
 
 
