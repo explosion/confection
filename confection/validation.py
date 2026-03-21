@@ -343,10 +343,34 @@ def validate_type(value, annotation):
     origin = get_origin(annotation)
     args = get_args(annotation)
 
-    # Annotated[X, ...] -> validate against X
+    # Annotated[X, ...] -> validate against X, respecting Strict metadata
     # get_origin returns None for Annotated in Python 3.10, so also check __metadata__
     if origin is Annotated or hasattr(annotation, "__metadata__"):
-        return validate_type(value, get_args(annotation)[0])
+        inner_type = get_args(annotation)[0]
+        metadata = getattr(annotation, "__metadata__", ())
+        strict = any(
+            getattr(m, "strict", False)
+            for m in metadata
+            if hasattr(m, "strict")
+        )
+        if strict:
+            if inner_type is int:
+                if type(value) is not int or isinstance(value, bool):
+                    return "Input should be a valid integer (strict)"
+                return None
+            elif inner_type is float:
+                if type(value) is not float:
+                    return "Input should be a valid float (strict)"
+                return None
+            elif inner_type is str:
+                if type(value) is not str:
+                    return "Input should be a valid string (strict)"
+                return None
+            elif inner_type is bool:
+                if type(value) is not bool:
+                    return "Input should be a valid boolean (strict)"
+                return None
+        return validate_type(value, inner_type)
 
     # Union / Optional  (typing.Union and Python 3.10+ X | Y syntax)
     if origin is Union or origin is types.UnionType:
@@ -825,7 +849,27 @@ def _extract_pydantic_fields(pydantic_cls):
     """Extract field definitions from a pydantic BaseModel class (v1 or v2)."""
     fields = {}
 
-    if hasattr(pydantic_cls, "__fields__"):
+    if hasattr(pydantic_cls, "model_fields"):
+        # pydantic v2 interface — check before __fields__ because pydantic v2
+        # exposes __fields__ as a deprecated property that triggers warnings
+        for name, pyd_field in pydantic_cls.model_fields.items():
+            annotation = pyd_field.annotation
+            if pyd_field.is_required():
+                default = ...
+            else:
+                default = pyd_field.default
+            alias = pyd_field.alias
+
+            if isinstance(annotation, type) and _is_pydantic_model(annotation):
+                annotation = ensure_schema(annotation)
+            if default is not ... and hasattr(default, "model_dump"):
+                default = _pydantic_instance_to_dict(default)
+
+            field = FieldInfo(default=default, alias=alias)
+            field.annotation = annotation
+            fields[name] = field
+
+    elif hasattr(pydantic_cls, "__fields__"):
         # pydantic v1 interface
         for name, pyd_field in pydantic_cls.__fields__.items():
             annotation = pyd_field.outer_type_
@@ -850,25 +894,6 @@ def _extract_pydantic_fields(pydantic_cls):
             field.annotation = annotation
             fields[name] = field
 
-    elif hasattr(pydantic_cls, "model_fields"):
-        # pydantic v2 interface
-        for name, pyd_field in pydantic_cls.model_fields.items():
-            annotation = pyd_field.annotation
-            if pyd_field.is_required():
-                default = ...
-            else:
-                default = pyd_field.default
-            alias = pyd_field.alias
-
-            if isinstance(annotation, type) and _is_pydantic_model(annotation):
-                annotation = ensure_schema(annotation)
-            if default is not ... and hasattr(default, "model_dump"):
-                default = _pydantic_instance_to_dict(default)
-
-            field = FieldInfo(default=default, alias=alias)
-            field.annotation = annotation
-            fields[name] = field
-
     return fields
 
 
@@ -876,7 +901,13 @@ def _extract_pydantic_config(pydantic_cls):
     """Extract model config from a pydantic BaseModel class (v1 or v2)."""
     config = {"extra": "allow"}
 
-    if hasattr(pydantic_cls, "__config__"):
+    if hasattr(pydantic_cls, "model_config") and isinstance(
+        pydantic_cls.model_config, dict
+    ):
+        # pydantic v2: dict — check before __config__ because pydantic v2
+        # exposes __config__ as a deprecated property that triggers warnings
+        config = dict(pydantic_cls.model_config)
+    elif hasattr(pydantic_cls, "__config__"):
         # pydantic v1: inner class Config
         cfg = pydantic_cls.__config__
         extra = getattr(cfg, "extra", "allow")
@@ -886,11 +917,6 @@ def _extract_pydantic_config(pydantic_cls):
         config["extra"] = extra if isinstance(extra, str) else str(extra)
         if hasattr(cfg, "arbitrary_types_allowed"):
             config["arbitrary_types_allowed"] = cfg.arbitrary_types_allowed
-    elif hasattr(pydantic_cls, "model_config") and isinstance(
-        pydantic_cls.model_config, dict
-    ):
-        # pydantic v2: dict
-        config = dict(pydantic_cls.model_config)
 
     return config
 

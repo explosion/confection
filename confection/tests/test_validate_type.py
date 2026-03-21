@@ -55,6 +55,47 @@ def test_annotated():
     assert validate_type("hi", Annotated[int, "metadata"]) is not None
 
 
+@pytest.mark.skipif(Annotated is None, reason="Annotated not available")
+def test_annotated_strict():
+    """Test that Annotated types with Strict metadata enforce strict checking.
+    This covers pydantic's StrictInt, StrictStr, StrictFloat, StrictBool."""
+
+    class Strict:
+        def __init__(self, strict=True):
+            self.strict = strict
+
+    StrictInt = Annotated[int, Strict()]
+    StrictStr = Annotated[str, Strict()]
+    StrictFloat = Annotated[float, Strict()]
+    StrictBool = Annotated[bool, Strict()]
+
+    # StrictInt: only actual ints
+    assert validate_type(42, StrictInt) is None
+    assert validate_type("10", StrictInt) is not None
+    assert validate_type(True, StrictInt) is not None
+    assert validate_type(3.0, StrictInt) is not None
+
+    # StrictStr: only actual strings
+    assert validate_type("hello", StrictStr) is None
+    assert validate_type(42, StrictStr) is not None
+
+    # StrictFloat: only actual floats
+    assert validate_type(3.14, StrictFloat) is None
+    assert validate_type(42, StrictFloat) is not None
+    assert validate_type("3.14", StrictFloat) is not None
+
+    # StrictBool: only actual bools
+    assert validate_type(True, StrictBool) is None
+    assert validate_type(False, StrictBool) is None
+    assert validate_type(1, StrictBool) is not None
+    assert validate_type(0, StrictBool) is not None
+
+    # Non-strict Annotated should still allow coercion
+    NonStrict = Annotated[int, Strict(strict=False)]
+    assert validate_type(42, NonStrict) is None
+    assert validate_type("10", NonStrict) is None  # int("10") works
+
+
 # === Union / Optional ===
 
 
