@@ -15,6 +15,6 @@ version=${version/\"/}
 echo "Pushing release-v"$version
 
 git tag -d release-v$version || true
-git push origin :release-v$version || true
+sudo gitw push origin :release-v$version || true
 git tag release-v$version
-git push origin release-v$version
+sudo gitw push origin release-v$version
