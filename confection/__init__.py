@@ -399,8 +399,7 @@ class Config(dict):
         merged = deep_merge_configs(updates_config, defaults, remove_extra=remove_extra)
         return type(self)(
             merged,
-            is_interpolated=defaults.is_interpolated
-            and updates_config.is_interpolated,
+            is_interpolated=defaults.is_interpolated and updates_config.is_interpolated,
             section_order=defaults.section_order,
         )
 
@@ -418,7 +417,9 @@ class Config(dict):
         )
         return dict(sorted(data.items(), key=sort_key))
 
-    def _set_overrides(self, config: "ConfigParser", overrides: Mapping[str, Any]) -> None:
+    def _set_overrides(
+        self, config: "ConfigParser", overrides: Mapping[str, Any]
+    ) -> None:
         """Set overrides in the ConfigParser before config is interpreted."""
         err_title = "Error parsing config overrides"
         for key, value in overrides.items():
