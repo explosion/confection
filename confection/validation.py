@@ -24,16 +24,21 @@ from typing import (
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
-try:
-    from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-        BaseModel as _PydanticV1BaseModel,
-    )
-    from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-        ValidationError as _PydanticV1ValidationError,
-    )
-except (ImportError, ModuleNotFoundError):
+# Skip pydantic.v1 on Python 3.14+ where it's unsupported and emits warnings.
+if sys.version_info >= (3, 14):
     _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
+else:
+    try:
+        from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
+            BaseModel as _PydanticV1BaseModel,
+        )
+        from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
+            ValidationError as _PydanticV1ValidationError,
+        )
+    except (ImportError, ModuleNotFoundError):
+        _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
+        _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
 
 try:
     from pydantic import (  # pyright: ignore[reportMissingImports]
