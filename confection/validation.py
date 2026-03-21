@@ -7,22 +7,13 @@ for config values against function signatures.
 import collections.abc
 import inspect
 import sys
-import types
 from pathlib import PurePath
 from types import GeneratorType
-from typing import (
-    Annotated,
-    Any,
-    Optional,
-    TypeVar,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
+from typing import Any, Optional, get_type_hints
 
-from .typeguard_checkers import TypeCheckError as _TypeCheckError
-from .typeguard_checkers import check_type as _typeguard_check_type
+from typeguard import TypeCheckError as _TypeCheckError
+from typeguard import check_type as _typeguard_check_type
+from typeguard._config import CollectionCheckStrategy
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
@@ -331,14 +322,6 @@ def _error_type_for(annotation):
     return "value_error"
 
 
-def _type_display(annotation):
-    """Human-readable name for a type."""
-    if annotation is type(None):
-        return "None"
-    if hasattr(annotation, "__name__"):
-        return annotation.__name__
-    return str(annotation)
-
 
 def validate_type(value, annotation):
     """Validate value against a type annotation.
@@ -356,92 +339,6 @@ def validate_type(value, annotation):
     if _is_generator_value(value):
         return None
 
-    origin = get_origin(annotation)
-
-    # Annotated[X, ...] -> validate against X, respecting Strict metadata
-    # get_origin returns None for Annotated in Python 3.10, so also check __metadata__
-    if origin is Annotated or hasattr(annotation, "__metadata__"):
-        inner_type = get_args(annotation)[0]
-        metadata = getattr(annotation, "__metadata__", ())
-        strict = any(
-            getattr(m, "strict", False) for m in metadata if hasattr(m, "strict")
-        )
-        if strict:
-            if inner_type is int:
-                if type(value) is not int or isinstance(value, bool):
-                    return "Input should be a valid integer (strict)"
-                return None
-            elif inner_type is float:
-                if type(value) is not float:
-                    return "Input should be a valid float (strict)"
-                return None
-            elif inner_type is str:
-                if type(value) is not str:
-                    return "Input should be a valid string (strict)"
-                return None
-            elif inner_type is bool:
-                if type(value) is not bool:
-                    return "Input should be a valid boolean (strict)"
-                return None
-        return validate_type(value, inner_type)
-
-    # Constrained types (confection-specific, not handled by typeguard)
-    if annotation is StrictBool:
-        if type(value) is not bool:
-            return "Input should be a valid boolean"
-        return None
-
-    if annotation is PositiveInt:
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            return "Input should be a positive integer, greater than 0"
-        return None
-
-    if annotation is StrictFloat:
-        if type(value) is not float:
-            return "Input should be a valid float"
-        return None
-
-    # Union / Optional — must go through validate_type per member so
-    # confection-specific types (StrictBool, PositiveInt, etc.) are handled.
-    if origin is Union or origin is types.UnionType:
-        for arg in get_args(annotation):
-            if validate_type(value, arg) is None:
-                return None
-        type_names = ", ".join(_type_display(a) for a in get_args(annotation))
-        return f"Input should be valid for union type: {type_names}"
-
-    # NewType: unwrap to the supertype
-    if callable(annotation) and hasattr(annotation, "__supertype__"):
-        return validate_type(value, annotation.__supertype__)  # pyright: ignore[reportFunctionMemberAccess]
-
-    # TypeVar: validate against bound or constraints
-    if isinstance(annotation, TypeVar):
-        if annotation.__bound__ is not None:
-            return validate_type(value, annotation.__bound__)
-        if annotation.__constraints__:
-            for constraint in annotation.__constraints__:
-                if validate_type(value, constraint) is None:
-                    return None
-            names = ", ".join(_type_display(c) for c in annotation.__constraints__)
-            return f"Input should be valid for: {names}"
-        return None  # unconstrained TypeVar accepts anything
-
-    # Plain types with confection-specific coercion (int/float accept strings,
-    # Path accepts strings, pydantic validator hooks, Schema dicts)
-    if isinstance(annotation, type) and origin is None:
-        if issubclass(annotation, Schema) and isinstance(value, dict):
-            errors = _validate_schema(
-                value,
-                annotation.model_fields,
-                annotation.model_config,
-                annotation.model_config.get("alias_generator"),
-            )
-            if errors:
-                return f"Input should be an instance of {annotation.__name__}"
-            return None
-        return _validate_plain_type(value, annotation)
-
-    # Delegate everything else (generics, Literal, etc.) to vendored typeguard.
     return _check_with_typeguard(value, annotation)
 
 
@@ -451,7 +348,11 @@ def _check_with_typeguard(value, annotation):
     Returns None if valid, or an error message string if invalid.
     """
     try:
-        _typeguard_check_type(value, annotation)
+        _typeguard_check_type(
+            value,
+            annotation,
+            collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
+        )
     except _TypeCheckError as exc:
         return str(exc)
     return None
@@ -464,16 +365,75 @@ def _confection_leaf_checker(value, origin_type, args, memo):
         raise _TypeCheckError(err)
 
 
+def _confection_schema_checker(value, origin_type, args, memo):
+    """Checker for Schema subclasses — validate dicts against schema fields."""
+    if isinstance(value, dict):
+        errors = _validate_schema(
+            value,
+            origin_type.model_fields,
+            origin_type.model_config,
+            origin_type.model_config.get("alias_generator"),
+        )
+        if errors:
+            raise _TypeCheckError(
+                f"is not a valid {origin_type.__name__}"
+            )
+    elif not isinstance(value, origin_type):
+        raise _TypeCheckError(
+            f"is not an instance of {origin_type.__name__}"
+        )
+
+
+_STRICT_CHECKS = {
+    int: (lambda v: type(v) is int and not isinstance(v, bool),
+          "is not a valid integer (strict)"),
+    float: (lambda v: type(v) is float,
+            "is not a valid float (strict)"),
+    str: (lambda v: type(v) is str,
+          "is not a valid string (strict)"),
+    bool: (lambda v: type(v) is bool,
+           "is not a valid boolean (strict)"),
+}
+
+
+def _confection_strict_checker(value, origin_type, args, memo):
+    """Checker for scalar types under Annotated[X, Strict()]."""
+    if origin_type in _STRICT_CHECKS:
+        check_fn, err_msg = _STRICT_CHECKS[origin_type]
+        if not check_fn(value):
+            raise _TypeCheckError(err_msg)
+    else:
+        # Not a type we have strict rules for — fall back to normal leaf check
+        _confection_leaf_checker(value, origin_type, args, memo)
+
+
+def _has_strict_extras(extras):
+    """Check if Annotated extras contain Strict metadata."""
+    return any(
+        getattr(m, "strict", False) for m in extras if hasattr(m, "strict")
+    )
+
+
 def _confection_checker_lookup(origin_type, args, extras):
     """Lookup function registered with typeguard that intercepts types
     confection handles specially — plain scalars with coercion, pydantic
-    constrained types with validator hooks, etc."""
+    constrained types with validator hooks, Schema subclasses, etc.
+
+    Typeguard strips Annotated before calling this, passing the metadata
+    as ``extras``.  So for ``Annotated[int, Strict()]`` we see
+    ``origin_type=int, extras=(Strict(),)``.
+    """
+    # Annotated with Strict metadata — enforce exact type
+    if extras and _has_strict_extras(extras):
+        return _confection_strict_checker
     if origin_type in (int, float, str, bool):
         return _confection_leaf_checker
     if origin_type in (StrictBool, StrictFloat, PositiveInt):
         return _confection_leaf_checker
     if isinstance(origin_type, type) and issubclass(origin_type, PurePath):
         return _confection_leaf_checker
+    if isinstance(origin_type, type) and issubclass(origin_type, Schema):
+        return _confection_schema_checker
     # Pydantic types with validator hooks (e.g. pydantic.v1.types.PositiveInt)
     if isinstance(origin_type, type) and (
         hasattr(origin_type, "__get_validators__")
@@ -484,10 +444,10 @@ def _confection_checker_lookup(origin_type, args, extras):
 
 
 def _register_confection_checkers():
-    from . import typeguard_checkers as _tg
+    from typeguard._checkers import checker_lookup_functions
 
     # Insert at the front so confection's lookup takes priority
-    _tg.checker_lookup_functions.insert(0, _confection_checker_lookup)
+    checker_lookup_functions.insert(0, _confection_checker_lookup)
 
 
 _register_confection_checkers()
