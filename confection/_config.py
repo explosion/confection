@@ -4,10 +4,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Self
 
 from ._constants import (
-    ARGS_FIELD,
-    ARGS_FIELD_ALIAS,
-    RESERVED_FIELDS,
-    RESERVED_FIELDS_REVERSE,
     SECTION_PREFIX,
     VARIABLE_RE,
 )
