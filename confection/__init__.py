@@ -18,9 +18,10 @@ from .util import (  # noqa: F401
 
 __all__ = [
     "Config",
-    "Promise",
     "registry",
     "ConfigValidationError",
+    "Promise",
+    "Schema",
     "SimpleFrozenDict",
     "SimpleFrozenList",
 ]
