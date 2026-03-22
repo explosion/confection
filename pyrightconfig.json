@@ -1,4 +1,5 @@
 {
-  "pythonPath": "/Users/matt/repos/spacy-monorepo/.venv/bin/python",
+  "venvPath": "/Users/matt/repos/spacy-monorepo",
+  "venv": ".venv",
   "extraPaths": ["/Users/matt/repos/spacy-monorepo/catalogue"]
 }

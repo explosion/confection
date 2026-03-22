@@ -15,7 +15,7 @@ from ._constants import SECTION_PREFIX
 
 
 class CustomInterpolation(ExtendedInterpolation):
-    def before_read(
+    def before_read(  # pyright: ignore[reportIncompatibleMethodOverride]
         self, parser: ConfigParser, section: str, option: str, value: str
     ) -> str:
         # Warn about single-quoted strings (common mistake)
@@ -43,7 +43,7 @@ class CustomInterpolation(ExtendedInterpolation):
         # conflict with the outer JSON string quotes
         return json.dumps(parsed).replace('"', '\\"')
 
-    def before_get(
+    def before_get(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         parser: ConfigParser,
         section: str,
@@ -114,7 +114,7 @@ class CustomInterpolation(ExtendedInterpolation):
                             v = map[opt]
                         else:
                             # We have block reference, store it as a special key
-                            section_name = parser[parser.optionxform(path[0])]._name  # type: ignore[union-attr]
+                            section_name = parser[parser.optionxform(path[0])].name
                             v = self._get_section_name(section_name)
                     elif len(path) == 2:
                         sect = path[0]
@@ -124,7 +124,7 @@ class CustomInterpolation(ExtendedInterpolation):
                         # If a variable doesn't exist, try again and treat the
                         # reference as a section
                         if v == fallback:
-                            v = self._get_section_name(parser[f"{sect}.{opt}"]._name)  # type: ignore[union-attr]
+                            v = self._get_section_name(parser[f"{sect}.{opt}"].name)
                     else:  # pragma: no cover
                         # Dead code: rsplit(".", 1) produces at most 2 elements
                         err = f"More than one ':' found: {rest}"
