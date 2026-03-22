@@ -85,6 +85,17 @@ def test_section_reference_resolves():
     assert result["a"]["settings"] == {"lr": 0.001}
 
 
+def test_override_replaces_promise_section():
+    """Overriding a promise section with a different promise should replace it."""
+    result = Config().from_str("""
+[a]
+
+[a.scorer]
+@scorers = "old_scorer.v1"
+""", interpolate=False, overrides={"a.scorer": {"@scorers": "new_scorer.v1"}})
+    assert result["a"]["scorer"]["@scorers"] == "new_scorer.v1"
+
+
 def test_uninterpolated_variable_preserved():
     """With interpolate=False, variable references should stay as strings."""
     result = Config().from_str("[a]\nx = 1\n\n[b]\ny = ${a.x}", interpolate=False)

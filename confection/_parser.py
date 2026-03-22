@@ -44,19 +44,15 @@ def parse_config(
     errors = _validate_overrides(config_parser, overrides)
     if errors:
         raise errors[0]
-    # Assumes overrides have been pre-validated.
-    for key, value in overrides.items():
-        section, option = key.rsplit(".", 1)
-        config_parser.set(section, option, try_dump_json(value, overrides))
     result: dict[str, Any] = {}
     section_parts = [section.split(".") for section in config_parser.sections()]
-    # Build the skeleton of nested dicts from section names.
+    # Phase 1: Build the skeleton of nested dicts from section names.
     for parts in section_parts:
         node = result
         for part in parts[:-1]:
             node = node.setdefault(part, {}) if part == "*" else node[part]
         node.setdefault(parts[-1], {})
-    # Fill in values, processing breadth-first by section depth.
+    # Phase 2: Fill in values, processing breadth-first by section depth.
     for section, values in sorted(config_parser.items(), key=lambda x: len(x[0].split("."))):
         if section == "DEFAULT":
             continue
@@ -66,9 +62,24 @@ def parse_config(
             node = node[part]
         for key in values:
             node[key] = _interpret_value(config_parser.get(section, key))
-    # Replace section reference placeholders with actual dicts.
+    # Phase 3: Apply overrides on the nested dict.
+    _apply_overrides(result, overrides)
+    # Phase 4: Replace section reference placeholders with actual dicts.
     _replace_section_refs(result, result)
     return result
+
+
+def _apply_overrides(result: dict[str, Any], overrides: Dict[str, Any]) -> None:
+    """Apply dot-notation overrides to a nested dict.
+
+    Override paths have already been validated by _validate_overrides.
+    """
+    for key, value in overrides.items():
+        path = key.split(".")
+        node = result
+        for part in path[:-1]:
+            node = node[part]
+        node[path[-1]] = value
 
 
 def serialize_config(
