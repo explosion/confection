@@ -11,14 +11,94 @@ from ._constants import SECTION_PREFIX
 from ._errors import ConfigValidationError
 
 
-def get_configparser(interpolate: bool = True) -> ConfigParser:
+def parse_config(
+    text: str,
+    *,
+    interpolate: bool = True,
+    overrides: Dict[str, Any] = {},
+) -> dict[str, Any]:
+    """Parse a config string into a nested dict.
+
+    Handles the full pipeline: parse with ConfigParser, validate structure,
+    apply overrides, interpret values, and resolve section references.
+
+    Returns the nested dict and whether a second interpolation pass is needed
+    (when overrides were applied with interpolation enabled).
+    """
+    config_parser = _get_configparser(interpolate=interpolate and not overrides)
+    try:
+        config_parser.read_string(text)
+    except ParsingError as e:
+        desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
+        raise ConfigValidationError(desc=desc) from None
+    errors = _validate_configparser(config_parser)
+    if errors:
+        raise errors[0]
+    errors = _validate_overrides(config_parser, overrides)
+    if errors:
+        raise errors[0]
+    # Assumes overrides have been pre-validated.
+    for key, value in overrides.items():
+        section, option = key.rsplit(".", 1)
+        config_parser.set(section, option, try_dump_json(value, overrides))
+    result: dict[str, Any] = {}
+    section_parts = [section.split(".") for section in config_parser.sections()]
+    # Build the skeleton of nested dicts from section names.
+    for parts in section_parts:
+        node = result
+        for part in parts[:-1]:
+            if part == "*":
+                node.setdefault(part, {})
+            else:
+                node = node[part]
+        node.setdefault(parts[-1], {})
+    # Fill in values, processing breadth-first by section depth.
+    for section, values in sorted(config_parser.items(), key=lambda x: len(x[0].split("."))):
+        if section == "DEFAULT":
+            continue
+        parts = section.split(".")
+        node = result
+        for part in parts:
+            node = node[part]
+        for key in values:
+            node[key] = _interpret_value(config_parser.get(section, key))
+    # Replace section reference placeholders with actual dicts.
+    _replace_section_refs(result, result)
+    return result
+
+
+def serialize_config(data: dict[str, Any], *, interpolate: bool = True) -> str:
+    """Serialize a nested config dict to a config string."""
+    flattened = _get_configparser(interpolate=interpolate)
+    queue: list[tuple[tuple, dict[str, Any]]] = [(tuple(), data)]
+    for path, node in queue:
+        section_name = ".".join(path)
+        is_kwarg = path and path[-1] != "*"
+        if is_kwarg and not flattened.has_section(section_name):
+            flattened.add_section(section_name)
+        for key, value in node.items():
+            if hasattr(value, "items"):
+                # Reference to a function with no arguments, serialize
+                # inline as a dict and don't create new section
+                if is_promise(value) and len(value) == 1 and is_kwarg:
+                    flattened.set(section_name, key, try_dump_json(value, node))
+                else:
+                    queue.append((path + (key,), value))
+            else:
+                flattened.set(section_name, key, try_dump_json(value, node))
+    string_io = io.StringIO()
+    flattened.write(string_io)
+    return string_io.getvalue().strip()
+
+
+def _get_configparser(interpolate: bool = True) -> ConfigParser:
     config = ConfigParser(interpolation=CustomInterpolation() if interpolate else None)
     # Preserve case of keys: https://stackoverflow.com/a/1611877/6400719
     config.optionxform = str  # type: ignore
     return config
 
 
-def validate_configparser(config_parser: ConfigParser) -> list[ConfigValidationError]:
+def _validate_configparser(config_parser: ConfigParser) -> list[ConfigValidationError]:
     """Validate a configparser's structure before interpreting it into a Config.
 
     Checks that:
@@ -60,7 +140,7 @@ def validate_configparser(config_parser: ConfigParser) -> list[ConfigValidationE
     return errors
 
 
-def validate_overrides(config_parser: ConfigParser, overrides: dict[str, Any]) -> list[ConfigValidationError]:
+def _validate_overrides(config_parser: ConfigParser, overrides: dict[str, Any]) -> list[ConfigValidationError]:
     errors = []
     err_title = "Error parsing config overrides"
     for key in overrides:
@@ -68,6 +148,7 @@ def validate_overrides(config_parser: ConfigParser, overrides: dict[str, Any]) -
         err = [{"loc": key.split("."), "msg": err_msg}]
         if "." not in key:
             errors.append(ConfigValidationError(errors=err, title=err_title))
+            continue
         section, _ = key.rsplit(".", 1)
         # Check for section and accept if option not in config[section]
         if section not in config_parser:
@@ -75,75 +156,6 @@ def validate_overrides(config_parser: ConfigParser, overrides: dict[str, Any]) -
         # TODO: Are we supposed to chek for the *option*?
     return errors
 
-
-def set_overrides(config: ConfigParser, overrides: dict[str, Any]) -> None:
-    """Set overrides in the ConfigParser before config is interpreted."""
-    # Assumes overrides have been pre-validated.
-    for key, value in overrides.items():
-        section, option = key.rsplit(".", 1)
-        config.set(section, option, try_dump_json(value, overrides))
-
-
-def parse_config_string(
-    text: str,
-    *,
-    interpolate: bool = True,
-    overrides: Dict[str, Any] = {},
-) -> Dict[str, Any]:
-    """Parse a config string into a nested dict.
-
-    Handles the full pipeline: parse with ConfigParser, validate structure,
-    apply overrides, interpret values, and resolve section references.
-
-    Returns the nested dict and whether a second interpolation pass is needed
-    (when overrides were applied with interpolation enabled).
-    """
-    config_parser = get_configparser(interpolate=interpolate and not overrides)
-    try:
-        config_parser.read_string(text)
-    except ParsingError as e:
-        desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
-        raise ConfigValidationError(desc=desc) from None
-    errors = validate_configparser(config_parser)
-    if errors:
-        raise errors[0]
-    errors = validate_overrides(config_parser, overrides)
-    if errors:
-        raise errors[0]
-    set_overrides(config_parser, overrides)
-    return interpret_configparser(config_parser)
-
-
-def interpret_configparser(config_parser: ConfigParser) -> Dict[str, Any]:
-    """Interpret a ConfigParser into a nested dict structure.
-
-    Takes a validated ConfigParser and returns a nested dict with JSON-parsed
-    values and resolved section references.
-    """
-    result: Dict[str, Any] = {}
-    section_parts = [section.split(".") for section in config_parser.sections()]
-    # Phase 1: Build the skeleton of nested dicts from section names.
-    for parts in section_parts:
-        node = result
-        for part in parts[:-1]:
-            if part == "*":
-                node.setdefault(part, {})
-            else:
-                node = node[part]
-        node.setdefault(parts[-1], {})
-    # Phase 2: Fill in values, processing breadth-first by section depth.
-    for section, values in sorted(config_parser.items(), key=lambda x: len(x[0].split("."))):
-        if section == "DEFAULT":
-            continue
-        parts = section.split(".")
-        node = result
-        for part in parts:
-            node = node[part]
-        for key in values:
-            node[key] = _interpret_value(config_parser.get(section, key))
-    # Phase 3: Replace section reference placeholders with actual dicts.
-    _replace_section_refs(result, result)
-    return result
 
 
 def _interpret_value(value: Any) -> Any:
@@ -159,7 +171,7 @@ def _interpret_value(value: Any) -> Any:
     return result
 
 
-def _replace_section_refs(root: Dict[str, Any], node: Dict[str, Any], parent: str = "") -> None:
+def _replace_section_refs(root: dict[str, Any], node: dict[str, Any], parent: str = "") -> None:
     """Replace section reference placeholders with actual dicts."""
     for key, value in node.items():
         key_parent = f"{parent}.{key}".strip(".")
@@ -207,28 +219,4 @@ def _get_section_ref(root: Dict[str, Any], value: Any, *, parent: List[str] = []
     return value
 
 
-def config_to_str(data: Dict[str, Any], *, interpolate: bool = True) -> str:
-    """Serialize a nested config dict to a config string."""
-    flattened = get_configparser(interpolate=interpolate)
-    queue: List[Tuple[tuple, Dict[str, Any]]] = [(tuple(), data)]
-    for path, node in queue:
-        section_name = ".".join(path)
-        is_kwarg = path and path[-1] != "*"
-        if is_kwarg and not flattened.has_section(section_name):
-            flattened.add_section(section_name)
-        for key, value in node.items():
-            if hasattr(value, "items"):
-                # Reference to a function with no arguments, serialize
-                # inline as a dict and don't create new section
-                if is_promise(value) and len(value) == 1 and is_kwarg:
-                    flattened.set(section_name, key, try_dump_json(value, node))
-                else:
-                    queue.append((path + (key,), value))
-            else:
-                flattened.set(section_name, key, try_dump_json(value, node))
-    string_io = io.StringIO()
-    flattened.write(string_io)
-    return string_io.getvalue().strip()
-
-
-__all__ = ["config_to_str", "parse_config_string", "get_configparser", "ParsingError"]
+__all__ = ["parse_config", "serialize_config"]
