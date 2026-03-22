@@ -19,7 +19,7 @@ try:
     from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
         ValidationError as _PydanticV1ValidationError,
     )
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
 
@@ -30,7 +30,7 @@ try:
     from pydantic import (  # pyright: ignore[reportMissingImports]
         ValidationError as _PydanticV2ValidationError,
     )
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV2BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV2ValidationError = None  # type: ignore[assignment,misc]
 
