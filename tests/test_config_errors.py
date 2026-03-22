@@ -89,3 +89,54 @@ def test_uninterpolated_variable_preserved():
     """With interpolate=False, variable references should stay as strings."""
     result = Config().from_str("[a]\nx = 1\n\n[b]\ny = ${a.x}", interpolate=False)
     assert result["b"]["y"] == "${a.x}"
+
+
+def test_single_quoted_string_warns():
+    """Single-quoted values should emit a warning about JSON formatting."""
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        Config().from_str("[a]\nx = 'hello'", interpolate=True)
+        assert any("single-quoted" in str(warning.message) for warning in w)
+
+
+def test_dollar_dollar_escape():
+    """$$ in config values should produce a literal $."""
+    result = Config().from_str("[a]\nx = \"$$100\"", interpolate=True)
+    assert result["a"]["x"] == "$100"
+
+
+def test_bad_interpolation_syntax():
+    """Malformed ${...} reference should raise."""
+    with pytest.raises(Exception):
+        Config().from_str("[a]\nx = ${", interpolate=True)
+
+
+def test_bare_dollar_raises():
+    """A bare $ not followed by $ or { should raise."""
+    with pytest.raises(Exception):
+        Config().from_str("[a]\nx = \"$x\"", interpolate=True)
+
+
+def test_same_section_variable():
+    """${key} without a section prefix references the same section."""
+    result = Config().from_str("[a]\nx = 1\ny = ${x}", interpolate=True)
+    assert result["a"]["y"] == 1
+
+
+def test_string_interpolation_coerces_values():
+    """Non-string values interpolated into strings should be coerced."""
+    result = Config().from_str(
+        "[a]\nx = 42\n\n[b]\ny = \"value is ${a.x}\"",
+        interpolate=True,
+    )
+    assert result["b"]["y"] == "value is 42"
+
+
+def test_string_interpolation_unwraps_json_strings():
+    """JSON strings interpolated into compound expressions should be unwrapped."""
+    result = Config().from_str(
+        "[a]\nx = \"hello\"\n\n[b]\ny = \"${a.x} world\"",
+        interpolate=True,
+    )
+    assert result["b"]["y"] == "hello world"
