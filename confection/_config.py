@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Self
 
 from ._errors import ConfigValidationError, ConfectionError
-from ._parser import config_to_str, parse_config_string
+from ._parser import parse_config, serialize_config
 
 
 class Config(dict):
@@ -89,7 +89,7 @@ class Config(dict):
     ) -> Self:
         """Load the config from a string."""
         self.clear()
-        self.update(parse_config_string(text, interpolate=interpolate, overrides=overrides))
+        self.update(parse_config(text, interpolate=interpolate, overrides=overrides))
         if overrides and interpolate:
             # Re-interpolate now that overrides are applied. The recursive
             # from_str call will have no overrides, so this doesn't loop.
@@ -99,7 +99,7 @@ class Config(dict):
 
     def to_str(self, *, interpolate: bool = True) -> str:
         """Write the config to a string."""
-        return config_to_str(self, interpolate=interpolate)
+        return serialize_config(self, interpolate=interpolate)
 
     def to_bytes(self, *, interpolate: bool = True) -> bytes:
         """Serialize the config to a byte string."""
