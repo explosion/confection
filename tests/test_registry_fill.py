@@ -269,6 +269,45 @@ def test_fill_strips_extra_fields_with_schema():
     assert "extra_field" not in filled["training"]
 
 
+def test_fill_positional_args():
+    """Functions with *args should have positional args filled under '*'."""
+
+    @_test_registry.models.register("chain.v1")
+    def chain(*layers):
+        return list(layers)
+
+    config = Config(
+        {
+            "model": {
+                "@models": "chain.v1",
+                "*": {
+                    "layer1": {"@models": "cnn.v1", "width": 64},
+                    "layer2": {"@models": "cnn.v1"},
+                },
+            }
+        }
+    )
+    filled = _test_registry.fill(config)
+    # Positional args should pass through, nested promise defaults filled
+    assert filled["model"]["*"]["layer2"]["depth"] == 3
+    assert filled["model"]["*"]["layer1"]["width"] == 64
+
+
+def test_fill_positional_args_not_flagged_as_unexpected():
+    """The '*' key should not be flagged as an unexpected argument."""
+    config = Config(
+        {
+            "model": {
+                "@models": "chain.v1",
+                "*": {"a": {"@models": "cnn.v1"}},
+            }
+        }
+    )
+    # Should not raise ConfigValidationError about unexpected '*'
+    filled = _test_registry.fill(config)
+    assert "*" in filled["model"]
+
+
 def test_fill_with_interpolation():
     """fill() with interpolate=True should resolve variables."""
     config = Config().from_str(

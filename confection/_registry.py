@@ -300,7 +300,13 @@ def _validate_promise_args(
 
     errors = []
     for param_name, field in schema.model_fields.items():
-        if param_name not in filled:
+        # Positional args (*args) are stored under the "*" key in the config
+        # as a dict of named entries — skip type validation since the dict
+        # form doesn't match Sequence[T] yet (fix_positionals converts later)
+        effective_name = param_name
+        if param_name not in filled and ARGS_FIELD in filled:
+            effective_name = ARGS_FIELD
+        if effective_name not in filled:
             if field.is_required():
                 errors.append(
                     {
@@ -308,10 +314,12 @@ def _validate_promise_args(
                         "msg": f"missing required argument: '{param_name}'",
                     }
                 )
-        elif not is_promise(filled[param_name]):
+        elif effective_name == ARGS_FIELD:
+            pass  # Skip validation — dict of positional args, not final form
+        elif not is_promise(filled[effective_name]):
             # Only validate non-promise values — promises will be validated
             # when they're resolved
-            err = validate_type(filled[param_name], field.annotation)
+            err = validate_type(filled[effective_name], field.annotation)
             if err:
                 errors.append(
                     {
@@ -319,8 +327,10 @@ def _validate_promise_args(
                         "msg": err,
                     }
                 )
-    # Check for unexpected arguments
-    known = set(schema.model_fields.keys()) | {k for k in filled if k.startswith("@")}
+    # Check for unexpected arguments (@ keys are registry refs, * is positional args)
+    known = set(schema.model_fields.keys()) | {
+        k for k in filled if k.startswith("@")
+    } | {ARGS_FIELD}
     for key in filled:
         if key not in known:
             errors.append(
