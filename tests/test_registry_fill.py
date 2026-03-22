@@ -168,6 +168,37 @@ learn_rate = 0.01
     assert filled["optimizer"]["beta1"] == 0.9
 
 
+def test_fill_promise_with_nested_dict_arg():
+    """A promise kwarg that is a plain dict (not a promise) with nested promises."""
+    config = Config({
+        "optimizer": {
+            "@optimizers": "Adam.v1",
+            "learn_rate": 0.01,
+            "metadata": {"nested_model": {"@models": "cnn.v1"}},
+        }
+    })
+    filled = _test_registry.fill(config)
+    # The nested promise inside the plain dict should have its defaults filled
+    assert filled["optimizer"]["metadata"]["nested_model"]["depth"] == 3
+
+
+def test_fill_nested_non_promise_dict():
+    """Non-promise dicts nested under a section with promises should recurse."""
+    config = Config().from_str("""
+[section]
+
+[section.sub]
+x = 1
+
+[section.model]
+@models = "cnn.v1"
+width = 64
+""", interpolate=False)
+    filled = _test_registry.fill(config)
+    assert filled["section"]["sub"] == {"x": 1}
+    assert filled["section"]["model"]["depth"] == 3
+
+
 def test_fill_with_interpolation():
     """fill() with interpolate=True should resolve variables."""
     config = Config().from_str("""

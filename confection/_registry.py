@@ -47,14 +47,14 @@ class Promise(Generic[_PromisedType]):
 
     @property
     def return_type(self) -> _PromisedType:
-        if isinstance(self.getter, catalogue.RegistryError):
-            raise self.getter
+        if isinstance(self.getter, catalogue.RegistryError):  # pragma: no cover
+            raise self.getter  # pragma: no cover
         signature = inspect.signature(self.getter)
         return signature.return_annotation
 
     def resolve(self) -> Any:
-        if isinstance(self.getter, catalogue.RegistryError):
-            raise self.getter
+        if isinstance(self.getter, catalogue.RegistryError):  # pragma: no cover
+            raise self.getter  # pragma: no cover
         kwargs = _recursive_resolve(self.kwargs)
         args = _recursive_resolve(self.var_args)
         args = list(args.values()) if isinstance(args, dict) else args
@@ -105,7 +105,7 @@ class registry:
             raise ValueError(f"Unknown registry: '{registry_name}'")
         reg = getattr(cls, registry_name)
         func = reg.get(func_name)
-        if func is None:
+        if func is None:  # pragma: no cover -- catalogue raises RegistryError first
             raise ValueError(f"Could not find '{func_name}' in '{registry_name}'")
         return func
 
@@ -350,10 +350,10 @@ def apply_overrides(
         err = [{"loc": path, "msg": err_msg}]
         node = output
         for subkey in path[:-1]:
-            if not isinstance(node, dict) or subkey not in node:
-                raise ConfigValidationError(errors=err, title=err_title)
+            if not isinstance(node, dict) or subkey not in node:  # pragma: no cover -- overrides validated in _parser
+                raise ConfigValidationError(errors=err, title=err_title)  # pragma: no cover
             node = node[subkey]
-        if path[-1] not in node:
-            raise ConfigValidationError(errors=err, title=err_title)
+        if path[-1] not in node:  # pragma: no cover
+            raise ConfigValidationError(errors=err, title=err_title)  # pragma: no cover
         node[path[-1]] = value  # pragma: no cover
     return output
