@@ -555,8 +555,8 @@ def ensure_schema(schema_cls):
                 pyd_cls(**data)  # pragma: no cover
         except pyd_validation_err as e:
             raise ValidationError(
-                e.errors()
-            ) from None  # pyright: ignore[reportAttributeAccessIssue]
+                e.errors()  # pyright: ignore[reportAttributeAccessIssue]
+            ) from None
         # Return attribute-accessible result with defaults filled in
         result_data = dict(data)
         for name, field in cls.model_fields.items():

@@ -198,7 +198,7 @@ def outer_match(value, annotation):
 
     # NewType — unwrap to supertype
     if callable(annotation) and hasattr(annotation, "__supertype__"):
-        return outer_match(value, annotation.__supertype__)
+        return outer_match(value, annotation.__supertype__)  # pyright: ignore[reportFunctionMemberAccess]
 
     # TypeVar
     if isinstance(annotation, TypeVar):
