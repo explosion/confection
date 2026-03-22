@@ -90,31 +90,7 @@ class Config(dict):
         if validation fails.
         """
         schema = ensure_schema(schema)
-        for section_name, section_data in self.items():
-            if not isinstance(section_data, dict):
-                continue
-            field = schema.model_fields.get(section_name)
-            if field is None:
-                continue
-            field_schema = field.annotation
-            if isinstance(field_schema, type) and hasattr(field_schema, "model_validate"):
-                try:
-                    field_schema.model_validate(section_data)
-                except ValidationError as e:
-                    raise ConfigValidationError(
-                        config=self,
-                        errors=e.errors(),
-                        title=f"Config validation error in [{section_name}]",
-                    ) from None
-        # Top-level validation
-        try:
-            schema.model_validate(dict(self))
-        except ValidationError as e:
-            raise ConfigValidationError(
-                config=self,
-                errors=e.errors(),
-                title="Config validation error",
-            ) from None
+        _validate_recursive(dict(self), schema, self)
         return self
 
     def fill_defaults(self, schema) -> Self:
@@ -194,6 +170,30 @@ class Config(dict):
         with path.open("r", encoding="utf8") as file_:
             text = file_.read()
         return self.from_str(text, interpolate=interpolate, overrides=overrides)
+
+
+def _validate_recursive(data, schema, config, parent=""):
+    """Validate data against a schema, recursing into nested schemas."""
+    try:
+        schema.model_validate(data)
+    except ValidationError as e:
+        section = f" in [{parent}]" if parent else ""
+        raise ConfigValidationError(
+            config=config,
+            errors=e.errors(),
+            title=f"Config validation error{section}",
+        ) from None
+    # Recurse into fields that are themselves schemas
+    for name, field in schema.model_fields.items():
+        annotation = field.annotation
+        if (
+            isinstance(annotation, type)
+            and hasattr(annotation, "model_validate")
+            and name in data
+            and isinstance(data[name], dict)
+        ):
+            child_parent = f"{parent}.{name}" if parent else name
+            _validate_recursive(data[name], annotation, config, parent=child_parent)
 
 
 def deep_merge_configs(
