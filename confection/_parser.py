@@ -47,10 +47,7 @@ def parse_config(
     for parts in section_parts:
         node = result
         for part in parts[:-1]:
-            if part == "*":
-                node.setdefault(part, {})
-            else:
-                node = node[part]
+            node = node.setdefault(part, {}) if part == "*" else node[part]
         node.setdefault(parts[-1], {})
     # Fill in values, processing breadth-first by section depth.
     for section, values in sorted(config_parser.items(), key=lambda x: len(x[0].split("."))):
@@ -125,8 +122,14 @@ def _validate_configparser(config_parser: ConfigParser) -> list[ConfigValidation
     for section in config_parser.sections():
         path = section.split(".")
         for i in range(1, len(path)):
+            # "*" is an implicit list section — it doesn't need a parent
+            # section header, and paths through it are always valid.
+            if path[i - 1] == "*":
+                continue
             parent = ".".join(path[:i])
-            if parent not in section_names:
+            # A parent is valid if it's a declared section OR if the path
+            # goes through a "*" component (which is implicitly created).
+            if parent not in section_names and "*" not in parent.split("."):
                 err_title = (
                     "Error parsing config section. Perhaps a section name is wrong?"
                 )
