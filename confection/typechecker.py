@@ -19,6 +19,7 @@ from pathlib import PurePath
 from types import GeneratorType
 from typing import (
     Any,
+    ForwardRef,
     Union,
     Optional,
     Literal,
@@ -208,8 +209,8 @@ def outer_match(value, annotation):
             return any(outer_match(value, c) for c in constraints)
         return True
 
-    # String-form forward references — can't resolve, accept
-    if isinstance(annotation, str):
+    # Forward references — can't resolve, accept
+    if isinstance(annotation, (str, ForwardRef)):
         return True
 
     # --- Plain types with coercion ---
