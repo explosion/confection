@@ -5,15 +5,19 @@
 
 Just basic structure and JSON-encoded values.
 """
-from hypothesis import given
+
+from configparser import InterpolationDepthError
+
+import pytest
+from hypothesis import HealthCheck, given, settings
 
 from confection import Config
-import pytest
-from configparser import InterpolationDepthError
-from hypothesis import settings, HealthCheck
 from tests.strategies import (
-    config_dicts, json_config_dicts, serialize_with_inline,
-    interpolated_config, circular_interpolated_config,
+    circular_interpolated_config,
+    config_dicts,
+    interpolated_config,
+    json_config_dicts,
+    serialize_with_inline,
 )
 
 
@@ -55,7 +59,8 @@ def test_circular_interpolation_raises(config_str):
 
 def test_star_sections_parse():
     """[section.*.name] creates a dict under the "*" key."""
-    result = Config().from_str("""
+    result = Config().from_str(
+        """
 [section]
 
 [section.*.first]
@@ -63,13 +68,16 @@ x = 1
 
 [section.*.second]
 x = 2
-""", interpolate=False)
+""",
+        interpolate=False,
+    )
     assert result["section"]["*"] == {"first": {"x": 1}, "second": {"x": 2}}
 
 
 def test_star_sections_roundtrip():
     """Configs with * sections roundtrip through to_str/from_str."""
-    original = Config().from_str("""
+    original = Config().from_str(
+        """
 [section]
 
 [section.*.a]
@@ -79,7 +87,9 @@ y = "hello"
 [section.*.b]
 x = 2
 y = "world"
-""", interpolate=False)
+""",
+        interpolate=False,
+    )
     serialized = original.to_str(interpolate=False)
     restored = Config().from_str(serialized, interpolate=False)
     assert dict_equal(restored, original)
@@ -87,7 +97,8 @@ y = "world"
 
 def test_star_sections_nested():
     """* sections can appear at different levels of nesting."""
-    result = Config().from_str("""
+    result = Config().from_str(
+        """
 [top]
 
 [top.*.item]
@@ -95,14 +106,17 @@ val = 1
 
 [top.*.item.sub]
 val = 2
-""", interpolate=False)
+""",
+        interpolate=False,
+    )
     assert result["top"]["*"]["item"]["val"] == 1
     assert result["top"]["*"]["item"]["sub"] == {"val": 2}
 
 
 def test_star_with_interpolation():
     """Variable interpolation works across * sections."""
-    result = Config().from_str("""
+    result = Config().from_str(
+        """
 [settings]
 lr = 0.001
 
@@ -110,7 +124,9 @@ lr = 0.001
 
 [models.*.first]
 learning_rate = ${settings.lr}
-""", interpolate=True)
+""",
+        interpolate=True,
+    )
     assert result["models"]["*"]["first"]["learning_rate"] == 0.001
 
 

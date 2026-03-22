@@ -1,6 +1,6 @@
 import json
-from hypothesis import strategies as st
 
+from hypothesis import strategies as st
 
 # Valid config keys: simple identifiers, no dots or special configparser chars
 config_keys = st.from_regex(r"[a-z][a-z0-9_]{0,15}", fullmatch=True)
@@ -200,9 +200,13 @@ def interpolated_config(draw):
     # Split paths into targets (stable values to reference) and candidates
     # (values that may be replaced with refs). A path can't be both.
     # Use random subset selection instead of permutations (which is O(n!)).
-    target_flags = draw(st.lists(
-        st.booleans(), min_size=len(scalar_paths), max_size=len(scalar_paths),
-    ))
+    target_flags = draw(
+        st.lists(
+            st.booleans(),
+            min_size=len(scalar_paths),
+            max_size=len(scalar_paths),
+        )
+    )
     targets = [sp for sp, flag in zip(scalar_paths, target_flags) if flag]
     candidates = [sp for sp, flag in zip(scalar_paths, target_flags) if not flag]
 
@@ -228,16 +232,21 @@ def circular_interpolated_config(draw):
     scalar_paths = [(p, v) for p, v in scalar_paths if not isinstance(v, bool)]
     if len(scalar_paths) < 2:
         from hypothesis import assume
+
         assume(False)
 
     sections = _flatten_sections(base)
 
     # Pick 2+ paths and create a cycle: a -> b -> ... -> a
     cycle_len = draw(st.integers(min_value=2, max_value=min(4, len(scalar_paths))))
-    cycle_indices = draw(st.lists(
-        st.sampled_from(range(len(scalar_paths))),
-        min_size=cycle_len, max_size=cycle_len, unique=True,
-    ))
+    cycle_indices = draw(
+        st.lists(
+            st.sampled_from(range(len(scalar_paths))),
+            min_size=cycle_len,
+            max_size=cycle_len,
+            unique=True,
+        )
+    )
     cycle_paths = [scalar_paths[i][0] for i in cycle_indices]
 
     replacements = {}

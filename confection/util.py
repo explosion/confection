@@ -9,6 +9,7 @@ from ._errors import ConfigValidationError
 
 _DIn = TypeVar("_DIn")
 
+
 class Decorator(Protocol):
     """Protocol to mark a function as returning its child with identical signature."""
 
@@ -67,7 +68,9 @@ class SimpleFrozenDict(dict):
     def pop(self, key, default=None):
         raise NotImplementedError(self.error)
 
-    def update(self, other=(), /, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def update(
+        self, other=(), /, **kwargs
+    ):  # pyright: ignore[reportIncompatibleMethodOverride]
         raise NotImplementedError(self.error)
 
     def __deepcopy__(self, memo):
@@ -157,6 +160,3 @@ def try_dump_json(value: Any, data: dict[str, dict] | str = "") -> str:
         raise ConfigValidationError(config=data, desc=err_msg) from e
     # Escape $ to $$ for configparser, but preserve ${...} variable references
     return re.sub(r"\$(?!\{)", "$$", value)
-
-
-

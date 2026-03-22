@@ -1,10 +1,10 @@
 import copy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Self
+from typing import Any, Dict, List, Optional, Self, Union
 
-from ._errors import ConfigValidationError, ConfectionError
+from ._errors import ConfectionError, ConfigValidationError
 from ._parser import parse_config, serialize_config
-from .validation import ensure_schema, ValidationError
+from .validation import ValidationError, ensure_schema
 
 
 class Config(dict):
@@ -102,7 +102,9 @@ class Config(dict):
                 self[name] = field.default
             elif name in self and isinstance(self[name], dict):
                 field_schema = field.annotation
-                if isinstance(field_schema, type) and hasattr(field_schema, "model_fields"):
+                if isinstance(field_schema, type) and hasattr(
+                    field_schema, "model_fields"
+                ):
                     sub_schema = ensure_schema(field_schema)
                     _fill_defaults_recursive(self[name], sub_schema)
         # Strip extras
@@ -256,5 +258,3 @@ def deep_merge_configs(
         elif key not in config:
             config[key] = value
     return config
-
-

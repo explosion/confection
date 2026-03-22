@@ -7,10 +7,14 @@ from ._constants import (  # noqa: F401
     SECTION_PREFIX,
     VARIABLE_RE,
 )
-from .util import try_dump_json, try_load_json  # noqa: F401
 from ._errors import ConfigValidationError
 from ._registry import Promise, registry
-from .util import SimpleFrozenDict, SimpleFrozenList
+from .util import (  # noqa: F401
+    SimpleFrozenDict,
+    SimpleFrozenList,
+    try_dump_json,
+    try_load_json,
+)
 
 __all__ = [
     "Config",

@@ -1,15 +1,16 @@
 """Test util.py: frozen collections, partial, try_dump_json."""
+
 import copy
+
 import pytest
 
+from confection._errors import ConfigValidationError
 from confection.util import (
     SimpleFrozenDict,
     SimpleFrozenList,
     partial,
     try_dump_json,
 )
-from confection._errors import ConfigValidationError
-
 
 # --- SimpleFrozenDict ---
 

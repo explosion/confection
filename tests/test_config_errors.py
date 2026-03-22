@@ -1,4 +1,5 @@
 """Test error cases in config parsing and validation."""
+
 import pytest
 
 from confection import Config
@@ -71,7 +72,7 @@ def test_section_ref_in_string():
     """Referencing a whole section inside a string should raise."""
     with pytest.raises(ConfigValidationError, match="Can't reference whole sections"):
         Config().from_str(
-            "[defaults]\nlr = 0.001\n\n[a]\nx = \"hello ${defaults}\"",
+            '[defaults]\nlr = 0.001\n\n[a]\nx = "hello ${defaults}"',
             interpolate=True,
         )
 
@@ -87,12 +88,16 @@ def test_section_reference_resolves():
 
 def test_override_replaces_promise_section():
     """Overriding a promise section with a different promise should replace it."""
-    result = Config().from_str("""
+    result = Config().from_str(
+        """
 [a]
 
 [a.scorer]
 @scorers = "old_scorer.v1"
-""", interpolate=False, overrides={"a.scorer": {"@scorers": "new_scorer.v1"}})
+""",
+        interpolate=False,
+        overrides={"a.scorer": {"@scorers": "new_scorer.v1"}},
+    )
     assert result["a"]["scorer"]["@scorers"] == "new_scorer.v1"
 
 
@@ -105,6 +110,7 @@ def test_uninterpolated_variable_preserved():
 def test_single_quoted_string_warns():
     """Single-quoted values should emit a warning about JSON formatting."""
     import warnings
+
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         Config().from_str("[a]\nx = 'hello'", interpolate=True)
@@ -113,7 +119,7 @@ def test_single_quoted_string_warns():
 
 def test_dollar_dollar_escape():
     """$$ in config values should produce a literal $."""
-    result = Config().from_str("[a]\nx = \"$$100\"", interpolate=True)
+    result = Config().from_str('[a]\nx = "$$100"', interpolate=True)
     assert result["a"]["x"] == "$100"
 
 
@@ -126,7 +132,7 @@ def test_bad_interpolation_syntax():
 def test_bare_dollar_raises():
     """A bare $ not followed by $ or { should raise."""
     with pytest.raises(Exception):
-        Config().from_str("[a]\nx = \"$x\"", interpolate=True)
+        Config().from_str('[a]\nx = "$x"', interpolate=True)
 
 
 def test_same_section_variable():
@@ -138,7 +144,7 @@ def test_same_section_variable():
 def test_string_interpolation_coerces_values():
     """Non-string values interpolated into strings should be coerced."""
     result = Config().from_str(
-        "[a]\nx = 42\n\n[b]\ny = \"value is ${a.x}\"",
+        '[a]\nx = 42\n\n[b]\ny = "value is ${a.x}"',
         interpolate=True,
     )
     assert result["b"]["y"] == "value is 42"
@@ -147,7 +153,7 @@ def test_string_interpolation_coerces_values():
 def test_string_interpolation_unwraps_json_strings():
     """JSON strings interpolated into compound expressions should be unwrapped."""
     result = Config().from_str(
-        "[a]\nx = \"hello\"\n\n[b]\ny = \"${a.x} world\"",
+        '[a]\nx = "hello"\n\n[b]\ny = "${a.x} world"',
         interpolate=True,
     )
     assert result["b"]["y"] == "hello world"

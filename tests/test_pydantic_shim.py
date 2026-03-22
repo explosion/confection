@@ -26,7 +26,7 @@ try:
         validator,
     )
 except ImportError:
-    from pydantic import (  # type: ignore
+    from pydantic import (  # type: ignore  # noqa: F401
         BaseModel,
         Field,
         StrictFloat,
@@ -35,7 +35,7 @@ except ImportError:
         validator,
     )
 
-from confection.validation import Schema, ValidationError, ensure_schema
+from confection.validation import Schema, ValidationError, ensure_schema  # noqa: E402
 
 # --- ensure_schema conversion ---
 
@@ -149,10 +149,9 @@ def test_pydantic_validator_works():
     converted.model_validate({"name": "HELLO"})
 
 
-
 # --- Pydantic v2 native models ---
 
-import pydantic as _pydantic_v2
+import pydantic as _pydantic_v2  # noqa: E402
 
 
 class V2SimpleSchema(_pydantic_v2.BaseModel):
@@ -227,9 +226,13 @@ def test_config_from_str_with_pydantic_schema():
     class TopSchema(BaseModel):
         section: MyPydanticSchema
 
-    config = Config().from_str("""
+    config = Config().from_str(
+        """
 [section]
 name = "test"
-""", interpolate=False, schema=TopSchema)
+""",
+        interpolate=False,
+        schema=TopSchema,
+    )
     assert config["section"]["name"] == "test"
     assert config["section"]["value"] == 10

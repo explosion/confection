@@ -8,27 +8,28 @@ import inspect
 import sys
 from typing import Any, Optional, get_type_hints
 
-from .typechecker import check_type as _tc2_check_type, Ctx
+from .typechecker import Ctx
+from .typechecker import check_type as _tc2_check_type
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
 try:
-    from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-        BaseModel as _PydanticV1BaseModel,
+    from pydantic.v1 import (
+        BaseModel as _PydanticV1BaseModel,  # pyright: ignore[reportMissingImports]
     )
-    from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-        ValidationError as _PydanticV1ValidationError,
+    from pydantic.v1 import (
+        ValidationError as _PydanticV1ValidationError,  # pyright: ignore[reportMissingImports]
     )
 except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
 
 try:
-    from pydantic import (  # pyright: ignore[reportMissingImports]
-        BaseModel as _PydanticV2BaseModel,
+    from pydantic import (
+        BaseModel as _PydanticV2BaseModel,  # pyright: ignore[reportMissingImports]
     )
-    from pydantic import (  # pyright: ignore[reportMissingImports]
-        ValidationError as _PydanticV2ValidationError,
+    from pydantic import (
+        ValidationError as _PydanticV2ValidationError,  # pyright: ignore[reportMissingImports]
     )
 except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV2BaseModel = None  # type: ignore[assignment,misc]
@@ -553,7 +554,9 @@ def ensure_schema(schema_cls):
             else:  # pragma: no cover -- all pydantic versions have model_validate or parse_obj
                 pyd_cls(**data)  # pragma: no cover
         except pyd_validation_err as e:
-            raise ValidationError(e.errors()) from None  # pyright: ignore[reportAttributeAccessIssue]
+            raise ValidationError(
+                e.errors()
+            ) from None  # pyright: ignore[reportAttributeAccessIssue]
         # Return attribute-accessible result with defaults filled in
         result_data = dict(data)
         for name, field in cls.model_fields.items():

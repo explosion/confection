@@ -1,4 +1,5 @@
 """Test _errors.py edge cases."""
+
 from confection._errors import ConfigValidationError
 
 
