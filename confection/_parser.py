@@ -83,6 +83,36 @@ def set_overrides(config: ConfigParser, overrides: dict[str, Any]) -> None:
         config.set(section, option, try_dump_json(value, overrides))
 
 
+def parse_config_string(
+    text: str,
+    *,
+    interpolate: bool = True,
+    overrides: Dict[str, Any] = {},
+) -> Dict[str, Any]:
+    """Parse a config string into a nested dict.
+
+    Handles the full pipeline: parse with ConfigParser, validate structure,
+    apply overrides, interpret values, and resolve section references.
+
+    Returns the nested dict and whether a second interpolation pass is needed
+    (when overrides were applied with interpolation enabled).
+    """
+    config_parser = get_configparser(interpolate=interpolate and not overrides)
+    try:
+        config_parser.read_string(text)
+    except ParsingError as e:
+        desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
+        raise ConfigValidationError(desc=desc) from None
+    errors = validate_configparser(config_parser)
+    if errors:
+        raise errors[0]
+    errors = validate_overrides(config_parser, overrides)
+    if errors:
+        raise errors[0]
+    set_overrides(config_parser, overrides)
+    return interpret_configparser(config_parser)
+
+
 def interpret_configparser(config_parser: ConfigParser) -> Dict[str, Any]:
     """Interpret a ConfigParser into a nested dict structure.
 

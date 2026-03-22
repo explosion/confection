@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Self
 
 from ._errors import ConfigValidationError, ConfectionError
 from .util import is_promise, try_dump_json
-from ._parser import get_configparser, ConfigParser, interpret_configparser, validate_configparser, validate_overrides, ParsingError, set_overrides
+from ._parser import get_configparser, parse_config_string
 
 
 class Config(dict):
@@ -18,7 +18,7 @@ class Config(dict):
 
     def __init__(
         self,
-        data: Optional[Union[Dict[str, Any], "ConfigParser", "Config"]] = None,
+        data: Optional[Union[Dict[str, Any], "Config"]] = None,
         *,
         is_interpolated: Optional[bool] = None,
         section_order: Optional[List[str]] = None,
@@ -27,10 +27,10 @@ class Config(dict):
         dict.__init__(self)
         if data is None:
             data = {}
-        if not isinstance(data, (dict, Config, ConfigParser)):
+        if not isinstance(data, (dict, Config)):
             raise ConfectionError(
-                f"Can't initialize Config with data. Expected dict, Config or "
-                f"ConfigParser but got: {type(data)}"
+                f"Can't initialize Config with data. Expected dict or "
+                f"Config but got: {type(data)}"
             )
         # Whether the config has been interpolated. We can use this to check
         # whether we need to interpolate again when it's resolved. We assume
@@ -90,28 +90,12 @@ class Config(dict):
         self, text: str, *, interpolate: bool = True, overrides: Dict[str, Any] = {}
     ) -> Self:
         """Load the config from a string."""
-        config_parser = get_configparser(interpolate=interpolate and not overrides)
-        try:
-            config_parser.read_string(text)
-        except ParsingError as e:
-            desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
-            raise ConfigValidationError(desc=desc) from None
-        errors = validate_configparser(config_parser)
-        if errors:
-            raise errors[0]
-        errors = validate_overrides(config_parser, overrides)
-        if errors:
-            raise errors[0]
-        set_overrides(config_parser, overrides)
-        # Clear previous values and populate from the configparser
         self.clear()
-        self.update(interpret_configparser(config_parser))
+        self.update(parse_config_string(text, interpolate=interpolate, overrides=overrides))
         if overrides and interpolate:
-            # do the interpolation. Avoids recursion because the new call from_str call
-            # will have overrides as empty
+            # Re-interpolate now that overrides are applied. The recursive
+            # from_str call will have no overrides, so this doesn't loop.
             self = self.interpolate()
-        # TODO: How does this make sense? If we had no overrides but interpolate=False,
-        # shouldn't we set is_interpolated=True?
         self.is_interpolated = interpolate
         return self
 
