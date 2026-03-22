@@ -1,8 +1,7 @@
 import io
 from configparser import (
     ConfigParser,
-    InterpolationMissingOptionError,
-    ParsingError
+    ParsingError,
 )
 from typing import Any, Dict, List, Tuple
 from .util import try_dump_json, try_load_json, VARIABLE_RE
@@ -136,11 +135,7 @@ def _validate_configparser(config_parser: ConfigParser) -> list[ConfigValidation
                 err = [{"loc": path, "msg": f"Section '{path[i-1]}' is not defined"}]
                 errors.append(ConfigValidationError(errors=err, title=err_title))
                 break
-        try:
-            keys = set(config_parser.options(section))
-        except InterpolationMissingOptionError as e:  # pragma: no cover -- requires broken interpolation in option listing
-            errors.append(ConfigValidationError(desc=f"{e}"))  # pragma: no cover
-            continue  # pragma: no cover
+        keys = set(config_parser.options(section))
         for other in section_names:
             if other.startswith(section + "."):
                 child = other[len(section) + 1:].split(".")[0]
