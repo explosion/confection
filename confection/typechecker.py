@@ -176,8 +176,12 @@ def outer_match(value, annotation):
     origin = get_origin(annotation)
     if origin is not None:
         check_against = ORIGIN_TO_BUILTIN.get(origin, origin)
-        if not isinstance(value, check_against):
-            return False
+        try:
+            if not isinstance(value, check_against):
+                return False
+        except TypeError:
+            # origin isn't a valid type for isinstance (e.g. some custom generics)
+            return True
         # Fixed-length tuple: check length here
         if origin is tuple:
             args = get_args(annotation)
@@ -195,9 +199,13 @@ def outer_match(value, annotation):
         bound = annotation.__bound__
         constraints = annotation.__constraints__
         if bound:
-            return isinstance(value, bound)
+            try:
+                return isinstance(value, bound)
+            except TypeError:
+                # bound contains unresolved ForwardRefs or complex generics
+                return outer_match(value, bound)
         if constraints:
-            return any(isinstance(value, c) for c in constraints)
+            return any(outer_match(value, c) for c in constraints)
         return True
 
     # String-form forward references — can't resolve, accept
