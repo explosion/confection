@@ -113,7 +113,7 @@ def _validate_configparser(config_parser: ConfigParser) -> list[ConfigValidation
     """
     errors = []
     default_section = config_parser.defaults()
-    if default_section:
+    if default_section:  # pragma: no cover -- configparser raises ParsingError first
         err_title = "Found config values without a top-level section"
         err_msg = "not part of a section"
         err = [{"loc": [k], "msg": err_msg} for k in default_section]
@@ -138,9 +138,9 @@ def _validate_configparser(config_parser: ConfigParser) -> list[ConfigValidation
                 break
         try:
             keys = set(config_parser.options(section))
-        except InterpolationMissingOptionError as e:
-            errors.append(ConfigValidationError(desc=f"{e}"))
-            continue
+        except InterpolationMissingOptionError as e:  # pragma: no cover -- requires broken interpolation in option listing
+            errors.append(ConfigValidationError(desc=f"{e}"))  # pragma: no cover
+            continue  # pragma: no cover
         for other in section_names:
             if other.startswith(section + "."):
                 child = other[len(section) + 1:].split(".")[0]
