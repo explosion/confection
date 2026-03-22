@@ -114,10 +114,13 @@ class registry:
         cls,
         config: Union[Config, Dict[str, Dict[str, Any]]],
         *,
+        schema=None,
         overrides: Dict[str, Any] = {},
+        validate: bool = True,
     ) -> Dict[str, Any]:
         config = cls.fill(
             config,
+            schema=schema,
             overrides=overrides,
             interpolate=True,
         )
@@ -125,6 +128,8 @@ class registry:
         resolved = resolve_promises(promised)
         fixed = fix_positionals(resolved)
         assert isinstance(fixed, dict)
+        if schema is not None and validate:
+            Config(fixed).validate(schema)
         return fixed
 
     @classmethod
@@ -132,8 +137,10 @@ class registry:
         cls,
         config: Union[Config, Dict[str, Dict[str, Any]]],
         *,
+        schema=None,
         overrides: Dict[str, Any] = {},
         interpolate: bool = False,
+        validate: bool = True,
     ) -> Config:
         if cls.is_promise(config):
             err_msg = "The top-level config object can't be a reference to a registered function."
@@ -157,6 +164,8 @@ class registry:
             filled = filled.merge(
                 Config(orig_config, is_interpolated=False), remove_extra=True
             )
+        if schema is not None:
+            filled.fill_defaults(schema)
         return filled
 
     @classmethod
