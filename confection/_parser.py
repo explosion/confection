@@ -5,7 +5,7 @@ from configparser import (
     ParsingError
 )
 from typing import Any, Dict, List, Tuple
-from .util import is_promise, try_dump_json, try_load_json, VARIABLE_RE
+from .util import try_dump_json, try_load_json, VARIABLE_RE
 from ._interpolation import CustomInterpolation
 from ._constants import SECTION_PREFIX
 from ._errors import ConfigValidationError
@@ -67,8 +67,19 @@ def parse_config(
     return result
 
 
-def serialize_config(data: dict[str, Any], *, interpolate: bool = True) -> str:
-    """Serialize a nested config dict to a config string."""
+def serialize_config(
+    data: dict[str, Any],
+    *,
+    interpolate: bool = True,
+    inline_paths: frozenset[str] = frozenset(),
+) -> str:
+    """Serialize a nested config dict to a config string.
+
+    inline_paths: dotted paths whose values should be serialized as inline
+        JSON rather than expanded into subsections. For example, if "a.b" is
+        in inline_paths, data["a"]["b"] (even if it's a dict) will be
+        serialized as ``b = {"key": "value"}`` under [a].
+    """
     flattened = _get_configparser(interpolate=interpolate)
     queue: list[tuple[tuple, dict[str, Any]]] = [(tuple(), data)]
     for path, node in queue:
@@ -77,13 +88,9 @@ def serialize_config(data: dict[str, Any], *, interpolate: bool = True) -> str:
         if is_kwarg and not flattened.has_section(section_name):
             flattened.add_section(section_name)
         for key, value in node.items():
-            if hasattr(value, "items"):
-                # Reference to a function with no arguments, serialize
-                # inline as a dict and don't create new section
-                if is_promise(value) and len(value) == 1 and is_kwarg:
-                    flattened.set(section_name, key, try_dump_json(value, node))
-                else:
-                    queue.append((path + (key,), value))
+            child_path = f"{section_name}.{key}" if section_name else key
+            if hasattr(value, "items") and child_path not in inline_paths:
+                queue.append((path + (key,), value))
             else:
                 flattened.set(section_name, key, try_dump_json(value, node))
     string_io = io.StringIO()
