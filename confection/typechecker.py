@@ -269,10 +269,11 @@ def outer_match(value: Any, annotation: Any) -> bool:
             try:
                 return isinstance(value, bound)
             except TypeError:
-                # bound contains unresolved ForwardRefs or complex generics
-                return outer_match(value, bound)
+                # bound contains unresolved ForwardRefs or complex generics;
+                # use check_type which handles Union via get_annot_branches
+                return check_type(value, bound)
         if constraints:
-            return any(outer_match(value, c) for c in constraints)
+            return any(check_type(value, c) for c in constraints)
         return True
 
     # Forward references — can't resolve, accept

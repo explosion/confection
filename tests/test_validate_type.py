@@ -110,6 +110,20 @@ def test_typevar_bound():
     assert validate_type("hi", T) is not None
 
 
+def test_typevar_bound_union():
+    T = TypeVar("T", bound=Union[str, int])
+    assert validate_type("hello", T) is None
+    assert validate_type(42, T) is None
+    assert validate_type(3.14, T) is not None
+
+
+def test_typevar_bound_union_negative():
+    T = TypeVar("T", bound=Union[None, float])
+    assert validate_type(None, T) is None
+    assert validate_type(3.14, T) is None
+    assert validate_type("hello", T) is not None
+
+
 def test_typevar_constraints():
     T = TypeVar("T", int, str)
     assert validate_type(42, T) is None
