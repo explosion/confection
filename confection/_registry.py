@@ -12,8 +12,6 @@ from typing import (
     Union,
 )
 
-import catalogue
-
 from ._config import Config
 from ._constants import (
     ARGS_FIELD,
@@ -33,17 +31,17 @@ class Promise(Generic[_PromisedType]):
     name: str
     var_args: List[Any]
     kwargs: Dict[str, Any]
-    getter: Union[Callable[..., _PromisedType], catalogue.RegistryError]
+    getter: Union[Callable[..., _PromisedType], Exception]
 
     @property
     def return_type(self) -> _PromisedType:
-        if isinstance(self.getter, catalogue.RegistryError):  # pragma: no cover
+        if isinstance(self.getter, Exception):  # pragma: no cover
             raise self.getter  # pragma: no cover
         signature = inspect.signature(self.getter)
         return signature.return_annotation
 
     def resolve(self) -> Any:
-        if isinstance(self.getter, catalogue.RegistryError):  # pragma: no cover
+        if isinstance(self.getter, Exception):  # pragma: no cover
             raise self.getter  # pragma: no cover
         kwargs = _recursive_resolve(self.kwargs)
         args = _recursive_resolve(self.var_args)
@@ -56,7 +54,7 @@ class Promise(Generic[_PromisedType]):
         var_args, kwargs = registry.parse_args(values)
         try:
             getter = registry.get(reg_name, func_name)
-        except catalogue.RegistryError as e:  # pragma: no cover
+        except Exception as e:  # pragma: no cover
             getter = e  # pragma: no cover
         output = cls(
             registry=reg_name,
