@@ -120,18 +120,20 @@ class Schema:
             if name in ("model_config", "model_fields") or name.startswith("_"):
                 continue
             default = ...
+            alias = None
             for klass in cls.__mro__:
                 if name in klass.__dict__:
                     val = klass.__dict__[name]
                     if isinstance(val, FieldInfo):
                         default = val.default
+                        alias = val.alias
                     elif not isinstance(
                         val, (type, classmethod, staticmethod, property)
                     ):
                         if not callable(val):
                             default = val
                     break
-            field = FieldInfo(default=default)
+            field = FieldInfo(default=default, alias=alias)
             field.annotation = annotation
             fields[name] = field
 
@@ -315,7 +317,7 @@ def validate_type(value, annotation):
         return None
     if ctx.errors:
         return str(ctx.errors[0])
-    return f"{value!r} does not match {annotation}"
+    return f"{value!r} does not match {annotation}"  # pragma: no cover -- defensive fallback
 
 
 # === Schema Validation ===
@@ -548,8 +550,8 @@ def ensure_schema(schema_cls):
                 pyd_cls.model_validate(data)
             elif hasattr(pyd_cls, "parse_obj"):
                 pyd_cls.parse_obj(data)
-            else:
-                pyd_cls(**data)
+            else:  # pragma: no cover -- all pydantic versions have model_validate or parse_obj
+                pyd_cls(**data)  # pragma: no cover
         except pyd_validation_err as e:
             raise ValidationError(e.errors()) from None  # pyright: ignore[reportAttributeAccessIssue]
         # Return attribute-accessible result with defaults filled in
