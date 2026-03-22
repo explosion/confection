@@ -4,45 +4,34 @@ Provides Schema base class, dynamic schema creation, and type validation
 for config values against function signatures.
 """
 
-import collections.abc
 import inspect
 import sys
-import types
-from pathlib import PurePath
-from types import GeneratorType
-from typing import (
-    Annotated,
-    Any,
-    Literal,
-    Optional,
-    TypeVar,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
+from typing import Any, Optional, get_type_hints
+
+from .typechecker import Ctx
+from .typechecker import check_type as _tc2_check_type
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
 try:
-    from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-        BaseModel as _PydanticV1BaseModel,
+    from pydantic.v1 import (
+        BaseModel as _PydanticV1BaseModel,  # pyright: ignore[reportMissingImports]
     )
-    from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-        ValidationError as _PydanticV1ValidationError,
+    from pydantic.v1 import (
+        ValidationError as _PydanticV1ValidationError,  # pyright: ignore[reportMissingImports]
     )
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
 
 try:
-    from pydantic import (  # pyright: ignore[reportMissingImports]
-        BaseModel as _PydanticV2BaseModel,
+    from pydantic import (
+        BaseModel as _PydanticV2BaseModel,  # pyright: ignore[reportMissingImports]
     )
-    from pydantic import (  # pyright: ignore[reportMissingImports]
-        ValidationError as _PydanticV2ValidationError,
+    from pydantic import (
+        ValidationError as _PydanticV2ValidationError,  # pyright: ignore[reportMissingImports]
     )
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV2BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV2ValidationError = None  # type: ignore[assignment,misc]
 
@@ -132,18 +121,20 @@ class Schema:
             if name in ("model_config", "model_fields") or name.startswith("_"):
                 continue
             default = ...
+            alias = None
             for klass in cls.__mro__:
                 if name in klass.__dict__:
                     val = klass.__dict__[name]
                     if isinstance(val, FieldInfo):
                         default = val.default
+                        alias = val.alias
                     elif not isinstance(
                         val, (type, classmethod, staticmethod, property)
                     ):
                         if not callable(val):
                             default = val
                     break
-            field = FieldInfo(default=default)
+            field = FieldInfo(default=default, alias=alias)
             field.annotation = annotation
             fields[name] = field
 
@@ -304,13 +295,6 @@ def resolve_type_hints(func):
 # === Type Validation ===
 
 
-def _is_generator_value(value):
-    """Check if value is a generator/iterator that shouldn't be consumed."""
-    return isinstance(
-        value, (GeneratorType, collections.abc.Iterator)
-    ) and not isinstance(value, (str, bytes))
-
-
 def _error_type_for(annotation):
     """Get an error type string for an annotation."""
     if annotation is int or annotation is PositiveInt:
@@ -328,409 +312,13 @@ def validate_type(value, annotation):
     """Validate value against a type annotation.
 
     Returns None if valid, or an error message string if invalid.
-    Generators/iterators always pass through without validation.
     """
-    if annotation is Any or annotation is inspect.Parameter.empty:
+    ctx = Ctx()
+    if _tc2_check_type(value, annotation, ctx=ctx):
         return None
-
-    if annotation is type(None):
-        return None if value is None else "Input should be None"
-
-    # Generators always pass through (they can't be validated without consumption)
-    if _is_generator_value(value):
-        return None
-
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-
-    # Annotated[X, ...] -> validate against X, respecting Strict metadata
-    # get_origin returns None for Annotated in Python 3.10, so also check __metadata__
-    if origin is Annotated or hasattr(annotation, "__metadata__"):
-        inner_type = get_args(annotation)[0]
-        metadata = getattr(annotation, "__metadata__", ())
-        strict = any(
-            getattr(m, "strict", False) for m in metadata if hasattr(m, "strict")
-        )
-        if strict:
-            if inner_type is int:
-                if type(value) is not int or isinstance(value, bool):
-                    return "Input should be a valid integer (strict)"
-                return None
-            elif inner_type is float:
-                if type(value) is not float:
-                    return "Input should be a valid float (strict)"
-                return None
-            elif inner_type is str:
-                if type(value) is not str:
-                    return "Input should be a valid string (strict)"
-                return None
-            elif inner_type is bool:
-                if type(value) is not bool:
-                    return "Input should be a valid boolean (strict)"
-                return None
-        return validate_type(value, inner_type)
-
-    # Union / Optional  (typing.Union and Python 3.10+ X | Y syntax)
-    if origin is Union or origin is types.UnionType:
-        for arg in args:
-            if validate_type(value, arg) is None:
-                return None
-        type_names = ", ".join(_type_display(a) for a in args)
-        return f"Input should be valid for union type: {type_names}"
-
-    # Literal
-    if origin is Literal:
-        if value in args:
-            return None
-        return f"Input should be {' or '.join(repr(a) for a in args)}"
-
-    # NewType: unwrap to the supertype
-    if callable(annotation) and hasattr(annotation, "__supertype__"):
-        return validate_type(value, annotation.__supertype__)  # pyright: ignore[reportFunctionMemberAccess]
-
-    # TypeVar: validate against bound or constraints
-    if isinstance(annotation, TypeVar):
-        if annotation.__bound__ is not None:
-            return validate_type(value, annotation.__bound__)
-        if annotation.__constraints__:
-            for constraint in annotation.__constraints__:
-                if validate_type(value, constraint) is None:
-                    return None
-            names = ", ".join(_type_display(c) for c in annotation.__constraints__)
-            return f"Input should be valid for: {names}"
-        return None  # unconstrained TypeVar accepts anything
-
-    # Constrained types
-    if annotation is StrictBool:
-        if type(value) is not bool:
-            return "Input should be a valid boolean"
-        return None
-
-    if annotation is PositiveInt:
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            return "Input should be a positive integer, greater than 0"
-        return None
-
-    if annotation is StrictFloat:
-        if type(value) is not float:
-            return "Input should be a valid float"
-        return None
-
-    # Generic types
-    if origin is not None:
-        return _validate_generic(value, origin, args)
-
-    # Plain types
-    if isinstance(annotation, type):
-        # If annotation is a Schema subclass and value is a dict, validate against it
-        if issubclass(annotation, Schema) and isinstance(value, dict):
-            errors = _validate_schema(
-                value,
-                annotation.model_fields,
-                annotation.model_config,
-                annotation.model_config.get("alias_generator"),
-            )
-            if errors:
-                return f"Input should be an instance of {annotation.__name__}"
-            return None
-        return _validate_plain_type(value, annotation)
-
-    # Unknown annotation - accept
-    return None
-
-
-def _validate_plain_type(value, typ):
-    """Validate value against a plain (non-generic) type."""
-    if typ is bool:
-        if not isinstance(value, bool):
-            return "Input should be a valid boolean"
-        return None
-
-    if typ is int:
-        if isinstance(value, bool):
-            return (
-                "Input should be a valid integer, unable to parse string as an integer"
-            )
-        if isinstance(value, int):
-            return None
-        if isinstance(value, str):
-            try:
-                int(value)
-                return None
-            except (ValueError, TypeError):
-                pass
-        return "Input should be a valid integer, unable to parse string as an integer"
-
-    if typ is float:
-        if isinstance(value, bool):
-            return "Input should be a valid number"
-        if isinstance(value, (int, float)):
-            return None
-        if isinstance(value, str):
-            try:
-                float(value)
-                return None
-            except (ValueError, TypeError):
-                pass
-        return "Input should be a valid number"
-
-    if typ is str:
-        if isinstance(value, str):
-            return None
-        return "Input should be a valid string"
-
-    # Path: accept strings (pydantic coerces str → Path)
-    if issubclass(typ, PurePath):
-        if isinstance(value, (str, PurePath)):
-            return None
-        return "Input should be a valid path"
-
-    # Custom class - isinstance check
-    try:
-        if isinstance(value, typ):
-            return None
-        # Types that declare custom validation via pydantic's schema protocol
-        # (e.g. thinc's Floats2d).  Extract and call the validator directly
-        # — the hook returns a plain dict, no pydantic import needed.
-        if hasattr(typ, "__get_pydantic_core_schema__"):
-            return _call_pydantic_schema_validator(typ, value)
-        # pydantic v1 protocol: __get_validators__ yields single-arg
-        # validator functions.
-        if hasattr(typ, "__get_validators__"):
-            return _call_pydantic_v1_validators(typ, value)
-        # For constrained subtypes without validator hooks: if the
-        # annotation inherits from the value's type, the value is
-        # structurally compatible.
-        if issubclass(typ, type(value)):
-            return None
-    except TypeError:
-        return None
-
-    return f"Input should be an instance of {getattr(typ, '__name__', str(typ))}"
-
-
-class _AnySchemaHandler:
-    """Minimal stand-in for pydantic's GetCoreSchemaHandler.
-
-    Passed to __get_pydantic_core_schema__ so we can extract the
-    validator function without importing pydantic.  The handler is
-    only called as ``handler(source_type)`` and must return a core
-    schema dict — ``{"type": "any"}`` tells pydantic "accept anything"
-    which is the right inner schema for a plain validator.
-    """
-
-    def __call__(self, _source_type):
-        return {"type": "any"}
-
-
-def _call_pydantic_schema_validator(typ, value):
-    """Call the validator from a type's __get_pydantic_core_schema__ hook.
-
-    The hook returns a plain dict describing the schema.  We extract the
-    validator function and call it directly — no pydantic import needed.
-    Returns None on success, or an error message string on failure.
-    """
-    schema = typ.__get_pydantic_core_schema__(typ, _AnySchemaHandler())
-    # Navigate the schema dict to find the validator function.
-    # Typical shapes:
-    #   {"type": "function-after", "function": {"type": "no-info", "function": <fn>}, ...}
-    #   {"type": "function-plain", "function": {"type": "no-info", "function": <fn>}}
-    fn_entry = schema.get("function", {})
-    if isinstance(fn_entry, dict):
-        validator = fn_entry.get("function")
-    else:
-        return None  # unrecognised shape — can't extract validator
-    if not callable(validator):
-        return None
-    try:
-        validator(value)
-    except (ValueError, TypeError, AssertionError) as e:
-        return str(e)
-    return None
-
-
-def _call_pydantic_v1_validators(typ, value):
-    """Call validators from a type's __get_validators__ hook (pydantic v1).
-
-    Validators may accept 1 arg (value), 2 args (value, field), or
-    3 args (value, field, config).  For multi-arg validators that need
-    field metadata (like number constraints), we build a minimal shim.
-    """
-    for validator in typ.__get_validators__():
-        try:
-            nparams = len(inspect.signature(validator).parameters)
-        except (ValueError, TypeError):
-            nparams = 1
-        if nparams > 2:
-            continue  # skip validators requiring pydantic config objects
-        try:
-            if nparams == 1:
-                value = validator(value)
-            else:
-                value = validator(value, _PydanticV1FieldShim(typ))
-        except (ValueError, TypeError, AssertionError) as e:
-            return str(e)
-    return None
-
-
-class _PydanticV1FieldShim:
-    """Minimal shim for pydantic v1 ModelField, providing just enough
-    for constraint validators (number_size_validator etc.)."""
-
-    def __init__(self, typ):
-        self.type_ = typ
-
-
-def _validate_generic(value, origin, args):
-    """Validate value against a generic type (List[X], Dict[K,V], etc.)."""
-    # Callable
-    if origin is collections.abc.Callable:
-        if callable(value):
-            return None
-        return "Input should be callable"
-
-    # list / List[X]
-    if origin is list:
-        if not isinstance(value, list):
-            return "Input should be a valid list"
-        if args:
-            for i, item in enumerate(value):
-                err = validate_type(item, args[0])
-                if err:
-                    return f"Item {i}: {err}"
-        return None
-
-    # dict / Dict[K, V]
-    if origin is dict:
-        if not isinstance(value, dict):
-            return "Input should be a valid dictionary"
-        if args and len(args) == 2:
-            for k, v in value.items():
-                err = validate_type(k, args[0])
-                if err:
-                    return f"Key {k!r}: {err}"
-                err = validate_type(v, args[1])
-                if err:
-                    return f"Value for {k!r}: {err}"
-        return None
-
-    # tuple / Tuple  —  Tuple[int, str] (fixed) vs Tuple[int, ...] (variable)
-    if origin is tuple:
-        if not isinstance(value, (tuple, list)):
-            return "Input should be a valid tuple"
-        if args:
-            if len(args) == 2 and args[1] is Ellipsis:
-                # Tuple[X, ...] — variable-length, all elements same type
-                for i, item in enumerate(value):
-                    err = validate_type(item, args[0])
-                    if err:
-                        return f"Item {i}: {err}"
-            elif args != ((),):
-                # Tuple[X, Y, Z] — fixed-length positional
-                if len(value) != len(args):
-                    return f"Expected {len(args)} items in tuple, got {len(value)}"
-                for i, (item, expected) in enumerate(zip(value, args)):
-                    err = validate_type(item, expected)
-                    if err:
-                        return f"Item {i}: {err}"
-        return None
-
-    # set / Set[X]
-    if origin is set:
-        if not isinstance(value, set):
-            return "Input should be a valid set"
-        if args:
-            for item in value:
-                err = validate_type(item, args[0])
-                if err:
-                    return f"Set item: {err}"
-        return None
-
-    # frozenset / FrozenSet[X]
-    if origin is frozenset:
-        if not isinstance(value, frozenset):
-            return "Input should be a valid frozenset"
-        if args:
-            for item in value:
-                err = validate_type(item, args[0])
-                if err:
-                    return f"Frozenset item: {err}"
-        return None
-
-    # Sequence
-    if origin is collections.abc.Sequence:
-        if isinstance(value, (list, tuple)):
-            if args:
-                for i, item in enumerate(value):
-                    err = validate_type(item, args[0])
-                    if err:
-                        return f"Item {i}: {err}"
-            return None
-        if isinstance(value, str):
-            return None
-        return "Input should be a valid sequence"
-
-    # Iterable
-    if origin is collections.abc.Iterable:
-        if hasattr(value, "__iter__"):
-            return None
-        return "Input should be iterable"
-
-    # Mapping (covers Mapping, MutableMapping, OrderedDict, etc.)
-    if isinstance(origin, type) and issubclass(origin, collections.abc.Mapping):
-        if isinstance(value, collections.abc.Mapping):
-            return None
-        return "Input should be a valid mapping"
-
-    # AbstractSet (covers Set, FrozenSet, MutableSet ABCs)
-    if isinstance(origin, type) and issubclass(origin, collections.abc.Set):
-        if isinstance(value, collections.abc.Set):
-            return None
-        return "Input should be a valid set"
-
-    # Iterator / Generator
-    if isinstance(origin, type) and issubclass(
-        origin, (collections.abc.Iterator, collections.abc.Generator)
-    ):
-        if hasattr(value, "__next__") or hasattr(value, "__iter__"):
-            return None
-        return "Input should be an iterator"
-
-    # Type[X] — check value is a class and optionally a subclass of X
-    if origin is type:
-        if not isinstance(value, type):
-            return "Input should be a type"
-        if args and args[0] is not Any:
-            expected = args[0]
-            try:
-                if not issubclass(value, expected):
-                    return (
-                        f"Input should be a subclass of"
-                        f" {getattr(expected, '__name__', expected)}"
-                    )
-            except TypeError:
-                pass  # expected is not a class (e.g. Union) — skip
-        return None
-
-    # For any other generic - try isinstance against origin
-    if isinstance(origin, type):
-        try:
-            if isinstance(value, origin):
-                return None
-        except TypeError:
-            return None
-        return f"Input should be an instance of {origin.__name__}"
-
-    return None
-
-
-def _type_display(annotation):
-    """Human-readable name for a type."""
-    if annotation is type(None):
-        return "None"
-    if hasattr(annotation, "__name__"):
-        return annotation.__name__
-    return str(annotation)
+    if ctx.errors:
+        return str(ctx.errors[0])
+    return f"{value!r} does not match {annotation}"  # pragma: no cover -- defensive fallback
 
 
 # === Schema Validation ===
@@ -848,8 +436,8 @@ def _extract_pydantic_fields(pydantic_cls):
     fields = {}
 
     if hasattr(pydantic_cls, "model_fields"):
-        # pydantic v2 interface — check before __fields__ because pydantic v2
-        # exposes __fields__ as a deprecated property that triggers warnings
+        # pydantic v2 interface (check first — v2 also exposes __fields__
+        # as a deprecated shim, so we must not fall into the v1 branch)
         for name, pyd_field in pydantic_cls.model_fields.items():
             annotation = pyd_field.annotation
             if pyd_field.is_required():
@@ -899,13 +487,7 @@ def _extract_pydantic_config(pydantic_cls):
     """Extract model config from a pydantic BaseModel class (v1 or v2)."""
     config = {"extra": "allow"}
 
-    if hasattr(pydantic_cls, "model_config") and isinstance(
-        pydantic_cls.model_config, dict
-    ):
-        # pydantic v2: dict — check before __config__ because pydantic v2
-        # exposes __config__ as a deprecated property that triggers warnings
-        config = dict(pydantic_cls.model_config)
-    elif hasattr(pydantic_cls, "__config__"):
+    if hasattr(pydantic_cls, "__config__"):
         # pydantic v1: inner class Config
         cfg = pydantic_cls.__config__
         extra = getattr(cfg, "extra", "allow")
@@ -915,6 +497,11 @@ def _extract_pydantic_config(pydantic_cls):
         config["extra"] = extra if isinstance(extra, str) else str(extra)
         if hasattr(cfg, "arbitrary_types_allowed"):
             config["arbitrary_types_allowed"] = cfg.arbitrary_types_allowed
+    elif hasattr(pydantic_cls, "model_config") and isinstance(
+        pydantic_cls.model_config, dict
+    ):
+        # pydantic v2: dict
+        config = dict(pydantic_cls.model_config)
 
     return config
 
@@ -964,10 +551,12 @@ def ensure_schema(schema_cls):
                 pyd_cls.model_validate(data)
             elif hasattr(pyd_cls, "parse_obj"):
                 pyd_cls.parse_obj(data)
-            else:
-                pyd_cls(**data)
+            else:  # pragma: no cover -- all pydantic versions have model_validate or parse_obj
+                pyd_cls(**data)  # pragma: no cover
         except pyd_validation_err as e:
-            raise ValidationError(e.errors()) from None  # pyright: ignore[reportAttributeAccessIssue]
+            raise ValidationError(
+                e.errors()  # pyright: ignore[reportAttributeAccessIssue]
+            ) from None
         # Return attribute-accessible result with defaults filled in
         result_data = dict(data)
         for name, field in cls.model_fields.items():

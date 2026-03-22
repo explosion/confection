@@ -1,6 +1,11 @@
 import functools
+import json
+import re
 from copy import deepcopy
-from typing import Any, Callable, Iterator, Protocol, TypeVar
+from typing import Any, Callable, Protocol, TypeVar
+
+from ._constants import VARIABLE_RE
+from ._errors import ConfigValidationError
 
 _DIn = TypeVar("_DIn")
 
@@ -24,23 +29,6 @@ def partial(
     partial_func = functools.partial(func, *args, **kwargs)
     partial_func.__doc__ = func.__doc__
     return partial_func
-
-
-class Generator(Iterator):
-    """Custom generator type. Used to annotate function arguments that accept
-    generators so they can be validated by pydantic (which doesn't support
-    iterators/iterables otherwise).
-    """
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not hasattr(v, "__iter__") and not hasattr(v, "__next__"):
-            raise TypeError("not a valid iterator")
-        return v
 
 
 DEFAULT_FROZEN_DICT_ERROR = (
@@ -80,7 +68,7 @@ class SimpleFrozenDict(dict):
     def pop(self, key, default=None):
         raise NotImplementedError(self.error)
 
-    def update(self, other):  # type: ignore[override]
+    def update(self, other=(), /, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
         raise NotImplementedError(self.error)
 
     def __deepcopy__(self, memo):
@@ -133,3 +121,40 @@ class SimpleFrozenList(list):
 
     def __deepcopy__(self, memo):
         return self.__class__(deepcopy(v) for v in self)
+
+
+def is_promise(obj) -> bool:
+    if not hasattr(obj, "keys"):
+        return False
+    id_keys = [k for k in obj.keys() if isinstance(k, str) and k.startswith("@")]
+    if len(id_keys):
+        return True
+    return False
+
+
+def try_load_json(value: str) -> Any:
+    """Load a JSON string if possible, otherwise default to original value."""
+    try:
+        return json.loads(value)
+    except Exception:
+        return value
+
+
+def try_dump_json(value: Any, data: dict[str, dict] | str = "") -> str:
+    """Dump a config value as JSON and output user-friendly error if it fails."""
+    # Special case if we have a variable: it's already a string so don't dump
+    # to preserve ${x:y} vs. "${x:y}"
+    if isinstance(value, str) and VARIABLE_RE.search(value):
+        return value
+    try:
+        value = json.dumps(value)
+    except Exception as e:
+        err_msg = (
+            f"Couldn't serialize config value of type {type(value)}: {e}. Make "
+            f"sure all values in your config are JSON-serializable. If you want "
+            f"to include Python objects, use a registered function that returns "
+            f"the object instead."
+        )
+        raise ConfigValidationError(config=data, desc=err_msg) from e
+    # Escape $ to $$ for configparser, but preserve ${...} variable references
+    return re.sub(r"\$(?!\{)", "$$", value)

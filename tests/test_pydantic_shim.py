@@ -26,7 +26,7 @@ try:
         validator,
     )
 except ImportError:
-    from pydantic import (  # type: ignore
+    from pydantic import (  # type: ignore  # noqa: F401
         BaseModel,
         Field,
         StrictFloat,
@@ -35,9 +35,7 @@ except ImportError:
         validator,
     )
 
-from confection import ConfigValidationError
-from confection.tests.util import my_registry
-from confection.validation import Schema, ValidationError, ensure_schema
+from confection.validation import Schema, ValidationError, ensure_schema  # noqa: E402
 
 # --- ensure_schema conversion ---
 
@@ -151,88 +149,90 @@ def test_pydantic_validator_works():
     converted.model_validate({"name": "HELLO"})
 
 
-# --- Registry integration ---
+# --- Pydantic v2 native models ---
+
+import pydantic as _pydantic_v2  # noqa: E402
 
 
-def test_registry_resolve_with_pydantic_schema():
-    class RegSchema(BaseModel):
-        hello: StrictInt
-        world: StrictInt
+class V2SimpleSchema(_pydantic_v2.BaseModel):
+    model_config = _pydantic_v2.ConfigDict(extra="forbid")
+    name: str
+    value: int = 10
+
+
+class V2InnerSchema(_pydantic_v2.BaseModel):
+    model_config = _pydantic_v2.ConfigDict(extra="forbid")
+    x: int
+
+
+class V2OuterSchema(_pydantic_v2.BaseModel):
+    model_config = _pydantic_v2.ConfigDict(extra="forbid")
+    inner: V2InnerSchema
+    label: str = "default"
+
+
+def test_v2_converts_to_schema():
+    converted = ensure_schema(V2SimpleSchema)
+    assert issubclass(converted, Schema)
+
+
+def test_v2_extracts_fields():
+    converted = ensure_schema(V2SimpleSchema)
+    assert "name" in converted.model_fields
+    assert "value" in converted.model_fields
+    assert converted.model_fields["name"].is_required()
+    assert converted.model_fields["value"].default == 10
+
+
+def test_v2_extracts_config():
+    converted = ensure_schema(V2SimpleSchema)
+    assert converted.model_config["extra"] == "forbid"
+
+
+def test_v2_nested_conversion():
+    converted = ensure_schema(V2OuterSchema)
+    inner_type = converted.model_fields["inner"].annotation
+    assert issubclass(inner_type, Schema)
+    assert "x" in inner_type.model_fields
+
+
+def test_v2_validate_correct():
+    converted = ensure_schema(V2SimpleSchema)
+    result = converted.model_validate({"name": "test"})
+    assert result.name == "test"
+    assert result.value == 10
+
+
+def test_v2_validate_rejects_extra():
+    converted = ensure_schema(V2SimpleSchema)
+    with pytest.raises(ValidationError):
+        converted.model_validate({"name": "x", "extra": 1})
+
+
+# --- Config integration with pydantic schema ---
+
+
+def test_config_from_str_with_pydantic_schema():
+    """Config.from_str works with a pydantic schema for validation and defaults."""
+    from confection import Config
+
+    class MyPydanticSchema(BaseModel):
+        name: StrictStr
+        value: StrictInt = 10
 
         class Config:
             extra = "forbid"
 
-    result = my_registry.resolve(
-        {"hello": 1, "world": 2}, schema=RegSchema, validate=True
+    class TopSchema(BaseModel):
+        section: MyPydanticSchema
+
+    config = Config().from_str(
+        """
+[section]
+name = "test"
+""",
+        interpolate=False,
+        schema=TopSchema,
     )
-    assert result == {"hello": 1, "world": 2}
-
-
-def test_registry_resolve_rejects_bad_type():
-    class RegSchema(BaseModel):
-        hello: StrictInt
-        world: StrictInt
-
-        class Config:
-            extra = "forbid"
-
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve(
-            {"hello": "bad", "world": 2}, schema=RegSchema, validate=True
-        )
-
-
-def test_registry_fill_with_defaults():
-    class FillSchema(BaseModel):
-        required: StrictInt
-        optional: StrictStr = "default_value"
-
-        class Config:
-            extra = "forbid"
-
-    filled = my_registry.fill({"required": 42}, schema=FillSchema)
-    assert filled["required"] == 42
-    assert filled["optional"] == "default_value"
-
-
-def test_registry_fill_rejects_extra():
-    class StrictSchema(BaseModel):
-        x: StrictInt
-
-        class Config:
-            extra = "forbid"
-
-    with pytest.raises(ConfigValidationError):
-        my_registry.fill({"x": 1, "extra": "bad"}, schema=StrictSchema, validate=True)
-
-
-# --- Mimics spaCy-style schemas ---
-
-
-def test_spacy_style_config_schema():
-    """Test a schema structure similar to spaCy's ConfigSchemaTraining."""
-
-    class TrainingSchema(BaseModel):
-        train_corpus: StrictStr = Field(..., title="Training data path")
-        dev_corpus: StrictStr = Field(..., title="Dev data path")
-        dropout: StrictFloat = Field(..., title="Dropout rate")
-        max_epochs: StrictInt = Field(..., title="Max epochs")
-        seed: StrictInt = Field(0, title="Random seed")
-
-        class Config:
-            extra = "forbid"
-            arbitrary_types_allowed = True
-
-    config = {
-        "train_corpus": "corpus/train",
-        "dev_corpus": "corpus/dev",
-        "dropout": 0.2,
-        "max_epochs": 100,
-    }
-    filled = my_registry.fill(config, schema=TrainingSchema)
-    assert filled["seed"] == 0
-    assert filled["dropout"] == 0.2
-
-    resolved = my_registry.resolve(config, schema=TrainingSchema, validate=True)
-    assert resolved["train_corpus"] == "corpus/train"
-    assert resolved["seed"] == 0
+    assert config["section"]["name"] == "test"
+    assert config["section"]["value"] == 10
