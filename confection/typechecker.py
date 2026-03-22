@@ -278,6 +278,18 @@ def outer_match(value, annotation):
 # Helpers for outer_match
 # ---------------------------------------------------------------------------
 
+def _resolve_dataclass_hints(cls):
+    """Resolve forward references in a dataclass's type annotations."""
+    import sys
+    from typing import get_type_hints
+    mod = sys.modules.get(cls.__module__)
+    globalns = vars(mod) if mod else None
+    try:
+        return get_type_hints(cls, globalns=globalns)
+    except (NameError, AttributeError, TypeError, RecursionError):
+        return {}
+
+
 def _has_strict_metadata(metadata):
     """Check if Annotated metadata contains a Strict() marker."""
     return any(getattr(m, "strict", False) for m in metadata if hasattr(m, "strict"))
@@ -386,16 +398,20 @@ def decompose(value, annotation, ctx):
 
     # Dataclass annotation with dict value — fan out over fields
     if isinstance(annotation, type) and is_dataclass(annotation) and isinstance(value, dict):
+        resolved_hints = _resolve_dataclass_hints(annotation)
         for f in dataclass_fields(annotation):
             if f.name in value:
-                yield (value[f.name], f.type, ctx.child(f.name))
+                hint = resolved_hints.get(f.name, f.type)
+                yield (value[f.name], hint, ctx.child(f.name))
         return
 
     # Dataclass annotation with dataclass value — match fields
     if isinstance(annotation, type) and is_dataclass(annotation) and is_dataclass(value):
+        resolved_hints = _resolve_dataclass_hints(annotation)
         for f in dataclass_fields(annotation):
             if hasattr(value, f.name):
-                yield (getattr(value, f.name), f.type, ctx.child(f.name))
+                hint = resolved_hints.get(f.name, f.type)
+                yield (getattr(value, f.name), hint, ctx.child(f.name))
         return
 
     # No type args means nothing to recurse into for generics
