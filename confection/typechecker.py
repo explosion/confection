@@ -14,9 +14,8 @@ from __future__ import annotations
 import collections.abc
 import inspect
 import types
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass
 from dataclasses import fields as dataclass_fields
-from dataclasses import is_dataclass
 from enum import Enum
 from pathlib import PurePath
 from types import GeneratorType
