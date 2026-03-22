@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Union, Self
 
 from ._errors import ConfigValidationError, ConfectionError
 from ._parser import parse_config, serialize_config
+from .validation import ensure_schema, ValidationError
 
 
 class Config(dict):
@@ -84,8 +85,63 @@ class Config(dict):
             section_order=defaults.section_order,
         )
 
+    def validate(self, schema) -> Self:
+        """Validate the config against a schema. Raises ConfigValidationError
+        if validation fails.
+        """
+        schema = ensure_schema(schema)
+        for section_name, section_data in self.items():
+            if not isinstance(section_data, dict):
+                continue
+            field = schema.model_fields.get(section_name)
+            if field is None:
+                continue
+            field_schema = field.annotation
+            if isinstance(field_schema, type) and hasattr(field_schema, "model_validate"):
+                try:
+                    field_schema.model_validate(section_data)
+                except ValidationError as e:
+                    raise ConfigValidationError(
+                        config=self,
+                        errors=e.errors(),
+                        title=f"Config validation error in [{section_name}]",
+                    ) from None
+        # Top-level validation
+        try:
+            schema.model_validate(dict(self))
+        except ValidationError as e:
+            raise ConfigValidationError(
+                config=self,
+                errors=e.errors(),
+                title="Config validation error",
+            ) from None
+        return self
+
+    def fill_defaults(self, schema) -> Self:
+        """Fill in missing values from schema defaults. Modifies in place
+        and returns self.
+        """
+        schema = ensure_schema(schema)
+        for name, field in schema.model_fields.items():
+            if name not in self and not field.is_required():
+                self[name] = field.default
+            elif name in self and isinstance(self[name], dict):
+                # Recurse into subsections if the field annotation is a schema
+                field_schema = field.annotation
+                if isinstance(field_schema, type) and hasattr(field_schema, "model_fields"):
+                    sub_schema = ensure_schema(field_schema)
+                    for sub_name, sub_field in sub_schema.model_fields.items():
+                        if sub_name not in self[name] and not sub_field.is_required():
+                            self[name][sub_name] = sub_field.default
+        return self
+
     def from_str(
-        self, text: str, *, interpolate: bool = True, overrides: Dict[str, Any] = {}
+        self,
+        text: str,
+        *,
+        interpolate: bool = True,
+        overrides: Dict[str, Any] = {},
+        schema=None,
     ) -> Self:
         """Load the config from a string."""
         self.clear()
@@ -95,6 +151,9 @@ class Config(dict):
             # from_str call will have no overrides, so this doesn't loop.
             self = self.interpolate()
         self.is_interpolated = interpolate
+        if schema is not None:
+            self.fill_defaults(schema)
+            self.validate(schema)
         return self
 
     def to_str(self, *, interpolate: bool = True) -> str:
