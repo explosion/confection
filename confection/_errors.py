@@ -1,8 +1,7 @@
 from typing import Optional
 
 
-class ConfectionError(ValueError):
-    ...
+class ConfectionError(ValueError): ...
 
 
 class ConfigValidationError(ConfectionError):

@@ -1,6 +1,5 @@
 """Test registry.fill() default-filling from function signatures."""
 
-
 import catalogue
 import pytest
 

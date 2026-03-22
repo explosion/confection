@@ -68,9 +68,7 @@ class SimpleFrozenDict(dict):
     def pop(self, key, default=None):
         raise NotImplementedError(self.error)
 
-    def update(
-        self, other=(), /, **kwargs
-    ):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def update(self, other=(), /, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
         raise NotImplementedError(self.error)
 
     def __deepcopy__(self, memo):
