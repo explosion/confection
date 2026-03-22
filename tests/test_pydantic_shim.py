@@ -150,6 +150,66 @@ def test_pydantic_validator_works():
 
 
 
+# --- Pydantic v2 native models ---
+
+import pydantic as _pydantic_v2
+
+
+class V2SimpleSchema(_pydantic_v2.BaseModel):
+    model_config = _pydantic_v2.ConfigDict(extra="forbid")
+    name: str
+    value: int = 10
+
+
+class V2InnerSchema(_pydantic_v2.BaseModel):
+    model_config = _pydantic_v2.ConfigDict(extra="forbid")
+    x: int
+
+
+class V2OuterSchema(_pydantic_v2.BaseModel):
+    model_config = _pydantic_v2.ConfigDict(extra="forbid")
+    inner: V2InnerSchema
+    label: str = "default"
+
+
+def test_v2_converts_to_schema():
+    converted = ensure_schema(V2SimpleSchema)
+    assert issubclass(converted, Schema)
+
+
+def test_v2_extracts_fields():
+    converted = ensure_schema(V2SimpleSchema)
+    assert "name" in converted.model_fields
+    assert "value" in converted.model_fields
+    assert converted.model_fields["name"].is_required()
+    assert converted.model_fields["value"].default == 10
+
+
+def test_v2_extracts_config():
+    converted = ensure_schema(V2SimpleSchema)
+    assert converted.model_config["extra"] == "forbid"
+
+
+def test_v2_nested_conversion():
+    converted = ensure_schema(V2OuterSchema)
+    inner_type = converted.model_fields["inner"].annotation
+    assert issubclass(inner_type, Schema)
+    assert "x" in inner_type.model_fields
+
+
+def test_v2_validate_correct():
+    converted = ensure_schema(V2SimpleSchema)
+    result = converted.model_validate({"name": "test"})
+    assert result.name == "test"
+    assert result.value == 10
+
+
+def test_v2_validate_rejects_extra():
+    converted = ensure_schema(V2SimpleSchema)
+    with pytest.raises(ValidationError):
+        converted.model_validate({"name": "x", "extra": 1})
+
+
 # --- Config integration with pydantic schema ---
 
 
