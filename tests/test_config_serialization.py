@@ -183,6 +183,40 @@ def test_init_override_metadata():
 
 # -- overrides with interpolation --
 
+# -- deep_merge_configs edge cases --
+
+
+def test_merge_leaf_vs_dict():
+    """When config has a leaf where defaults has a dict, skip merging."""
+    base = Config({"a": {"sub": {"x": 1}}})
+    updates = Config({"a": {"sub": "leaf_value"}})
+    merged = base.merge(updates)
+    assert merged["a"]["sub"] == "leaf_value"
+
+
+def test_merge_different_promise():
+    """Blocks with different @registry functions should not merge."""
+    base = Config({"a": {"@cats": "meow.v1", "x": 1}})
+    updates = Config({"a": {"@cats": "woof.v1", "y": 2}})
+    merged = base.merge(updates)
+    # Updates win — base defaults not merged in because different function
+    assert merged["a"]["@cats"] == "woof.v1"
+    assert merged["a"]["y"] == 2
+    assert "x" not in merged["a"]
+
+
+def test_merge_promise_not_in_defaults():
+    """Promise in updates but not in defaults should not merge defaults."""
+    base = Config({"a": {"x": 1}})
+    updates = Config({"a": {"@cats": "meow.v1", "y": 2}})
+    merged = base.merge(updates)
+    assert merged["a"]["@cats"] == "meow.v1"
+    assert "x" not in merged["a"]
+
+
+# -- overrides with interpolation --
+
+
 def test_overrides_with_interpolation():
     result = Config().from_str(
         "[a]\nx = 1\n\n[b]\ny = ${a.x}",

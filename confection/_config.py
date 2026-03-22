@@ -62,10 +62,7 @@ class Config(dict):
 
     def copy(self) -> Self:
         """Deepcopy the config."""
-        try:
-            config = copy.deepcopy(self)
-        except Exception as e:
-            raise ConfectionError(f"Couldn't deep-copy config: {e}") from e
+        config = copy.deepcopy(self)
         return type(self)(
             config,
             is_interpolated=self.is_interpolated,
