@@ -23,12 +23,12 @@ from typing import (
 
 import catalogue
 
-from ._config import (
+from ._config import Config
+from ._constants import (
     ARGS_FIELD,
     ARGS_FIELD_ALIAS,
     RESERVED_FIELDS,
     RESERVED_FIELDS_REVERSE,
-    Config,
 )
 from ._errors import ConfigValidationError
 from .util import is_promise
@@ -51,11 +51,11 @@ class Promise(Generic[_PromisedType]):
         signature = inspect.signature(self.getter)
         return signature.return_annotation
 
-    def resolve(self, validate: bool = True) -> Any:
+    def resolve(self) -> Any:
         if isinstance(self.getter, catalogue.RegistryError):
             raise self.getter
-        kwargs = _recursive_resolve(self.kwargs, validate=validate)
-        args = _recursive_resolve(self.var_args, validate=validate)
+        kwargs = _recursive_resolve(self.kwargs)
+        args = _recursive_resolve(self.var_args)
         args = list(args.values()) if isinstance(args, dict) else args
         return self.getter(*args, **kwargs)  # type: ignore
 
@@ -212,7 +212,7 @@ def fill_config(
     overrides: Dict[str, Dict[str, Any]] = {},
 ) -> Dict[str, Any]:
     overrided = apply_overrides(dict(config), overrides)
-    return defaulted
+    return overrided
 
 
 def insert_promises(
