@@ -1,5 +1,6 @@
 """Tests for edge cases in validation.py."""
 
+import sys
 from typing import Optional
 
 import pytest
@@ -243,6 +244,9 @@ def test_pydantic_instance_to_dict_v2():
     assert _pydantic_instance_to_dict(M()) == {"x": 1}
 
 
+@pytest.mark.skipif(
+    sys.version_info >= (3, 14), reason="pydantic v1 not compatible with 3.14+"
+)
 def test_pydantic_instance_to_dict_v1():
     from pydantic.v1 import BaseModel
 
@@ -269,6 +273,9 @@ def test_ensure_schema_plain_class():
 # --- v1 allow_none (Optional) ---
 
 
+@pytest.mark.skipif(
+    sys.version_info >= (3, 14), reason="pydantic v1 not compatible with 3.14+"
+)
 def test_v1_optional_field():
     from pydantic.v1 import BaseModel as V1Model
 
@@ -301,6 +308,9 @@ def test_v2_pydantic_instance_default():
 # --- v1 model with pydantic instance default ---
 
 
+@pytest.mark.skipif(
+    sys.version_info >= (3, 14), reason="pydantic v1 not compatible with 3.14+"
+)
 def test_v1_pydantic_instance_default():
     from pydantic.v1 import BaseModel as V1Model
 
