@@ -91,21 +91,26 @@ class Config(dict):
         return self
 
     def fill_defaults(self, schema) -> Self:
-        """Fill in missing values from schema defaults. Modifies in place
-        and returns self.
+        """Fill in missing values from schema defaults and remove extra
+        fields if the schema forbids them. Modifies in place and returns self.
         """
         schema = ensure_schema(schema)
+        extra = schema.model_config.get("extra", "allow")
+        # Fill defaults
         for name, field in schema.model_fields.items():
             if name not in self and not field.is_required():
                 self[name] = field.default
             elif name in self and isinstance(self[name], dict):
-                # Recurse into subsections if the field annotation is a schema
                 field_schema = field.annotation
                 if isinstance(field_schema, type) and hasattr(field_schema, "model_fields"):
                     sub_schema = ensure_schema(field_schema)
-                    for sub_name, sub_field in sub_schema.model_fields.items():
-                        if sub_name not in self[name] and not sub_field.is_required():
-                            self[name][sub_name] = sub_field.default
+                    _fill_defaults_recursive(self[name], sub_schema)
+        # Strip extras
+        if extra == "forbid":
+            known = set(schema.model_fields.keys())
+            for key in list(self.keys()):
+                if key not in known:
+                    del self[key]
         return self
 
     def from_str(
@@ -167,6 +172,23 @@ class Config(dict):
         with path.open("r", encoding="utf8") as file_:
             text = file_.read()
         return self.from_str(text, interpolate=interpolate, overrides=overrides)
+
+
+def _fill_defaults_recursive(data, schema):
+    """Fill defaults and strip extras recursively for nested schemas."""
+    extra = schema.model_config.get("extra", "allow")
+    for name, field in schema.model_fields.items():
+        if name not in data and not field.is_required():
+            data[name] = field.default
+        elif name in data and isinstance(data[name], dict):
+            field_schema = field.annotation
+            if isinstance(field_schema, type) and hasattr(field_schema, "model_fields"):
+                _fill_defaults_recursive(data[name], ensure_schema(field_schema))
+    if extra == "forbid":
+        known = set(schema.model_fields.keys())
+        for key in list(data.keys()):
+            if key not in known:
+                del data[key]
 
 
 def _validate_recursive(data, schema, config, parent=""):

@@ -198,6 +198,41 @@ width = 64
     assert filled["section"]["model"]["depth"] == 3
 
 
+def test_fill_skips_unknown_functions():
+    """fill() should skip promises referencing unknown functions, not crash."""
+    config = Config({
+        "section": {
+            "known": {"@optimizers": "Adam.v1"},
+            "unknown": {"@optimizers": "nonexistent.v1"},
+        }
+    })
+    filled = _test_registry.fill(config)
+    # Known function gets defaults filled
+    assert filled["section"]["known"]["beta1"] == 0.9
+    # Unknown function passes through unchanged
+    assert filled["section"]["unknown"] == {"@optimizers": "nonexistent.v1"}
+
+
+def test_fill_strips_extra_fields_with_schema():
+    """fill() with a schema that has extra='forbid' should strip unknown keys."""
+    from confection.validation import Schema
+
+    class TrainingSchema(Schema):
+        model_config = {"extra": "forbid"}
+        patience: int = 10
+        dropout: float = 0.2
+
+    class MySchema(Schema):
+        model_config = {"extra": "forbid"}
+        training: TrainingSchema
+
+    config = Config({"training": {"patience": 5, "extra_field": "hello"}})
+    filled = _test_registry.fill(config, schema=MySchema)
+    assert filled["training"]["patience"] == 5
+    assert filled["training"]["dropout"] == 0.2
+    assert "extra_field" not in filled["training"]
+
+
 def test_fill_with_interpolation():
     """fill() with interpolate=True should resolve variables."""
     config = Config().from_str("""

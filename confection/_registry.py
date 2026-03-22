@@ -250,6 +250,9 @@ def _fill_promise_defaults(
 ) -> Dict[str, Any]:
     """Fill default argument values for a promise block from the function signature."""
     reg_name, func_name = registry.get_constructor(promise_dict)
+    if not registry.has(reg_name, func_name):
+        # Can't fill defaults for unknown functions — they'll error at resolve time
+        return dict(promise_dict)
     func = registry.get(reg_name, func_name)
     schema = Schema.from_function(func)
     filled = dict(promise_dict)
