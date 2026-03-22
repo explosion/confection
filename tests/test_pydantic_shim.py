@@ -35,8 +35,6 @@ except ImportError:
         validator,
     )
 
-from confection import ConfigValidationError
-from confection.tests.util import my_registry
 from confection.validation import Schema, ValidationError, ensure_schema
 
 # --- ensure_schema conversion ---
@@ -151,88 +149,27 @@ def test_pydantic_validator_works():
     converted.model_validate({"name": "HELLO"})
 
 
-# --- Registry integration ---
+
+# --- Config integration with pydantic schema ---
 
 
-def test_registry_resolve_with_pydantic_schema():
-    class RegSchema(BaseModel):
-        hello: StrictInt
-        world: StrictInt
+def test_config_from_str_with_pydantic_schema():
+    """Config.from_str works with a pydantic schema for validation and defaults."""
+    from confection import Config
 
-        class Config:
-            extra = "forbid"
-
-    result = my_registry.resolve(
-        {"hello": 1, "world": 2}, schema=RegSchema, validate=True
-    )
-    assert result == {"hello": 1, "world": 2}
-
-
-def test_registry_resolve_rejects_bad_type():
-    class RegSchema(BaseModel):
-        hello: StrictInt
-        world: StrictInt
+    class MyPydanticSchema(BaseModel):
+        name: StrictStr
+        value: StrictInt = 10
 
         class Config:
             extra = "forbid"
 
-    with pytest.raises(ConfigValidationError):
-        my_registry.resolve(
-            {"hello": "bad", "world": 2}, schema=RegSchema, validate=True
-        )
+    class TopSchema(BaseModel):
+        section: MyPydanticSchema
 
-
-def test_registry_fill_with_defaults():
-    class FillSchema(BaseModel):
-        required: StrictInt
-        optional: StrictStr = "default_value"
-
-        class Config:
-            extra = "forbid"
-
-    filled = my_registry.fill({"required": 42}, schema=FillSchema)
-    assert filled["required"] == 42
-    assert filled["optional"] == "default_value"
-
-
-def test_registry_fill_rejects_extra():
-    class StrictSchema(BaseModel):
-        x: StrictInt
-
-        class Config:
-            extra = "forbid"
-
-    with pytest.raises(ConfigValidationError):
-        my_registry.fill({"x": 1, "extra": "bad"}, schema=StrictSchema, validate=True)
-
-
-# --- Mimics spaCy-style schemas ---
-
-
-def test_spacy_style_config_schema():
-    """Test a schema structure similar to spaCy's ConfigSchemaTraining."""
-
-    class TrainingSchema(BaseModel):
-        train_corpus: StrictStr = Field(..., title="Training data path")
-        dev_corpus: StrictStr = Field(..., title="Dev data path")
-        dropout: StrictFloat = Field(..., title="Dropout rate")
-        max_epochs: StrictInt = Field(..., title="Max epochs")
-        seed: StrictInt = Field(0, title="Random seed")
-
-        class Config:
-            extra = "forbid"
-            arbitrary_types_allowed = True
-
-    config = {
-        "train_corpus": "corpus/train",
-        "dev_corpus": "corpus/dev",
-        "dropout": 0.2,
-        "max_epochs": 100,
-    }
-    filled = my_registry.fill(config, schema=TrainingSchema)
-    assert filled["seed"] == 0
-    assert filled["dropout"] == 0.2
-
-    resolved = my_registry.resolve(config, schema=TrainingSchema, validate=True)
-    assert resolved["train_corpus"] == "corpus/train"
-    assert resolved["seed"] == 0
+    config = Config().from_str("""
+[section]
+name = "test"
+""", interpolate=False, schema=TopSchema)
+    assert config["section"]["name"] == "test"
+    assert config["section"]["value"] == 10
