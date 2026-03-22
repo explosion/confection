@@ -1,10 +1,11 @@
+import io
 from configparser import (
     ConfigParser,
     InterpolationMissingOptionError,
     ParsingError
 )
-from typing import Any, Dict, List
-from .util import try_dump_json, try_load_json, VARIABLE_RE
+from typing import Any, Dict, List, Tuple
+from .util import is_promise, try_dump_json, try_load_json, VARIABLE_RE
 from ._interpolation import CustomInterpolation
 from ._constants import SECTION_PREFIX
 from ._errors import ConfigValidationError
@@ -206,4 +207,28 @@ def _get_section_ref(root: Dict[str, Any], value: Any, *, parent: List[str] = []
     return value
 
 
-__all__ = ["ConfigParser", "get_configparser", "interpret_configparser", "validate_configparser", "validate_overrides", "set_overrides", "ParsingError"]
+def config_to_str(data: Dict[str, Any], *, interpolate: bool = True) -> str:
+    """Serialize a nested config dict to a config string."""
+    flattened = get_configparser(interpolate=interpolate)
+    queue: List[Tuple[tuple, Dict[str, Any]]] = [(tuple(), data)]
+    for path, node in queue:
+        section_name = ".".join(path)
+        is_kwarg = path and path[-1] != "*"
+        if is_kwarg and not flattened.has_section(section_name):
+            flattened.add_section(section_name)
+        for key, value in node.items():
+            if hasattr(value, "items"):
+                # Reference to a function with no arguments, serialize
+                # inline as a dict and don't create new section
+                if is_promise(value) and len(value) == 1 and is_kwarg:
+                    flattened.set(section_name, key, try_dump_json(value, node))
+                else:
+                    queue.append((path + (key,), value))
+            else:
+                flattened.set(section_name, key, try_dump_json(value, node))
+    string_io = io.StringIO()
+    flattened.write(string_io)
+    return string_io.getvalue().strip()
+
+
+__all__ = ["config_to_str", "parse_config_string", "get_configparser", "ParsingError"]

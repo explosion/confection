@@ -1,11 +1,9 @@
 import copy
-import io
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, Self
+from typing import Any, Dict, List, Optional, Union, Self
 
 from ._errors import ConfigValidationError, ConfectionError
-from .util import is_promise, try_dump_json
-from ._parser import get_configparser, parse_config_string
+from ._parser import config_to_str, parse_config_string
 
 
 class Config(dict):
@@ -101,29 +99,7 @@ class Config(dict):
 
     def to_str(self, *, interpolate: bool = True) -> str:
         """Write the config to a string."""
-        flattened = get_configparser(interpolate=interpolate)
-        queue: List[Tuple[tuple, "Config"]] = [(tuple(), self)]
-        for path, node in queue:
-            section_name = ".".join(path)
-            is_kwarg = path and path[-1] != "*"
-            if is_kwarg and not flattened.has_section(section_name):
-                # Always create sections for non-'*' sections, not only if
-                # they have leaf entries, as we don't want to expand
-                # blocks that are undefined
-                flattened.add_section(section_name)
-            for key, value in node.items():
-                if hasattr(value, "items"):
-                    # Reference to a function with no arguments, serialize
-                    # inline as a dict and don't create new section
-                    if is_promise(value) and len(value) == 1 and is_kwarg:
-                        flattened.set(section_name, key, try_dump_json(value, node))
-                    else:
-                        queue.append((path + (key,), value))
-                else:
-                    flattened.set(section_name, key, try_dump_json(value, node))
-        string_io = io.StringIO()
-        flattened.write(string_io)
-        return string_io.getvalue().strip()
+        return config_to_str(self, interpolate=interpolate)
 
     def to_bytes(self, *, interpolate: bool = True) -> bytes:
         """Serialize the config to a byte string."""
