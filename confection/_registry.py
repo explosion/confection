@@ -153,7 +153,7 @@ class registry:
         if not is_interpolated:
             config = Config(orig_config).interpolate()
         filled = fill_config(
-            cls, config, overrides=overrides
+            cls, config, overrides=overrides, validate=validate
         )
         filled = Config(filled, section_order=section_order)
         # Merge the original config back to preserve variables if we started
@@ -220,24 +220,34 @@ def fill_config(
     config: Dict[str, Any],
     *,
     overrides: Dict[str, Dict[str, Any]] = {},
+    validate: bool = True,
 ) -> Dict[str, Any]:
     overrided = apply_overrides(dict(config), overrides)
-    return _fill_defaults(registry, overrided)
+    return _fill_defaults(registry, overrided, validate=validate)
 
 
-def _fill_defaults(registry, config: Dict[str, Any]) -> Dict[str, Any]:
+def _fill_defaults(
+    registry, config: Dict[str, Any], *, validate: bool = True
+) -> Dict[str, Any]:
     """Recursively fill default values from registered function signatures."""
     output = dict(config)
     for key, value in output.items():
         if is_promise(value):
-            # Look up the function and fill its defaults
-            output[key] = _fill_promise_defaults(registry, value)
+            output[key] = _fill_promise_defaults(
+                registry, value, validate=validate, parent=key
+            )
         elif isinstance(value, dict):
-            output[key] = _fill_defaults(registry, value)
+            output[key] = _fill_defaults(registry, value, validate=validate)
     return output
 
 
-def _fill_promise_defaults(registry, promise_dict: Dict[str, Any]) -> Dict[str, Any]:
+def _fill_promise_defaults(
+    registry,
+    promise_dict: Dict[str, Any],
+    *,
+    validate: bool = True,
+    parent: str = "",
+) -> Dict[str, Any]:
     """Fill default argument values for a promise block from the function signature."""
     reg_name, func_name = registry.get_constructor(promise_dict)
     func = registry.get(reg_name, func_name)
@@ -247,15 +257,64 @@ def _fill_promise_defaults(registry, promise_dict: Dict[str, Any]) -> Dict[str, 
     for param_name, field in schema.model_fields.items():
         if param_name not in filled and not field.is_required():
             filled[param_name] = field.default
+    # Validate: check for missing required args and type errors
+    if validate:
+        _validate_promise_args(filled, schema, func_name, parent)
     # Recurse into nested values (which may themselves be promises)
     for key, value in filled.items():
         if key.startswith("@"):
             continue
         if is_promise(value):
-            filled[key] = _fill_promise_defaults(registry, value)
+            filled[key] = _fill_promise_defaults(
+                registry, value, validate=validate, parent=f"{parent}.{key}"
+            )
         elif isinstance(value, dict):
-            filled[key] = _fill_defaults(registry, value)
+            filled[key] = _fill_defaults(registry, value, validate=validate)
     return filled
+
+
+def _validate_promise_args(
+    filled: Dict[str, Any],
+    schema,
+    func_name: str,
+    parent: str,
+) -> None:
+    """Validate promise arguments against the function schema."""
+    from .validation import validate_type
+
+    errors = []
+    for param_name, field in schema.model_fields.items():
+        if param_name not in filled:
+            if field.is_required():
+                errors.append({
+                    "loc": [parent, param_name] if parent else [param_name],
+                    "msg": f"missing required argument: '{param_name}'",
+                })
+        elif not is_promise(filled[param_name]):
+            # Only validate non-promise values — promises will be validated
+            # when they're resolved
+            err = validate_type(filled[param_name], field.annotation)
+            if err:
+                errors.append({
+                    "loc": [parent, param_name] if parent else [param_name],
+                    "msg": err,
+                })
+    # Check for unexpected arguments
+    known = set(schema.model_fields.keys()) | {
+        k for k in filled if k.startswith("@")
+    }
+    for key in filled:
+        if key not in known:
+            errors.append({
+                "loc": [parent, key] if parent else [key],
+                "msg": f"unexpected argument: '{key}'",
+            })
+    if errors:
+        raise ConfigValidationError(
+            config=filled,
+            errors=errors,
+            title=f"Config error for '{func_name}'",
+        )
 
 
 def insert_promises(

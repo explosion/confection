@@ -168,8 +168,8 @@ learn_rate = 0.01
     assert filled["optimizer"]["beta1"] == 0.9
 
 
-def test_fill_promise_with_nested_dict_arg():
-    """A promise kwarg that is a plain dict (not a promise) with nested promises."""
+def test_fill_promise_rejects_extra_args():
+    """Extra args not in the function signature should be rejected."""
     config = Config({
         "optimizer": {
             "@optimizers": "Adam.v1",
@@ -177,9 +177,8 @@ def test_fill_promise_with_nested_dict_arg():
             "metadata": {"nested_model": {"@models": "cnn.v1"}},
         }
     })
-    filled = _test_registry.fill(config)
-    # The nested promise inside the plain dict should have its defaults filled
-    assert filled["optimizer"]["metadata"]["nested_model"]["depth"] == 3
+    with pytest.raises(ConfigValidationError):
+        _test_registry.fill(config)
 
 
 def test_fill_nested_non_promise_dict():
