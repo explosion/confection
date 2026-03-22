@@ -9,7 +9,7 @@ from ._constants import (
 )
 from ._errors import ConfigValidationError, ConfectionError
 from .util import is_promise, try_dump_json, try_load_json
-from ._parser import get_configparser, ConfigParser, find_structure_errors, validate_overrides, ParsingError, set_overrides
+from ._parser import get_configparser, ConfigParser, validate_configparser, validate_overrides, ParsingError, set_overrides
 
 
 class Config(dict):
@@ -69,13 +69,7 @@ class Config(dict):
         """Interpret a config, parse nested sections and parse the values
         as JSON. Mostly used internally and modifies the config in place.
         """
-        # Phase 0: Get all the validation out of the way, before we mutate.
-        structure_errors = find_structure_errors(self, config_parser)
-        if structure_errors:
-            # Previous behaviour only raised one error here. We can do better, but
-            # for now match the previous behaviour.
-            raise structure_errors[0]
-        section_parts = [section.split(".") for section in config_parser.keys()]
+        section_parts = [section.split(".") for section in config_parser.sections()]
         # Phase 1:
         # * Insert dict for * values (to represent positionals)
         # * Insert {} to represent leaf-sections
@@ -96,7 +90,7 @@ class Config(dict):
                 continue
             parts = section.split(".")
             node = self
-            for part in parts[:-1]:
+            for part in parts:
                 node = node[part]
             for key in values:
                 node[key] = self._interpret_value(config_parser.get(section, key))
@@ -150,6 +144,9 @@ class Config(dict):
         except ParsingError as e:
             desc = f"Make sure the sections and values are formatted correctly.\n\n{e}"
             raise ConfigValidationError(desc=desc) from None
+        errors = validate_configparser(config_parser)
+        if errors:
+            raise errors[0]
         errors = validate_overrides(config_parser, overrides)
         if errors:
             raise errors[0]
@@ -278,11 +275,11 @@ def _replace_section_refs(config: Config, node: dict[str, Any], parent: str = ""
         if isinstance(value, dict):
             _replace_section_refs(config, value, parent=key_parent)
         elif isinstance(value, list):
-            config[key] = [
+            node[key] = [
                 _get_section_ref(config, v, parent=[parent, key]) for v in value
             ]
         else:
-            config[key] = _get_section_ref(config, value, parent=[parent, key])
+            node[key] = _get_section_ref(config, value, parent=[parent, key])
 
 
 def _get_section_ref(config: Config, value: Any, *, parent: List[str] = []) -> Any:
