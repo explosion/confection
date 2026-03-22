@@ -4,47 +4,34 @@ Provides Schema base class, dynamic schema creation, and type validation
 for config values against function signatures.
 """
 
-import collections.abc
 import inspect
 import sys
-from enum import Enum
-from pathlib import PurePath
-from types import GeneratorType
 from typing import Any, Optional, get_type_hints
 
-import warnings
-
-from typeguard import TypeCheckError as _TypeCheckError
-from typeguard import check_type as _typeguard_check_type
-from typeguard._config import CollectionCheckStrategy
-from typeguard._exceptions import TypeHintWarning
+from .typechecker import Ctx
+from .typechecker import check_type as _tc2_check_type
 
 # Optional pydantic imports — confection doesn't depend on pydantic,
 # but if it's installed we can detect and convert BaseModel schemas.
-# Skip pydantic.v1 on Python 3.14+ where it's unsupported and emits warnings.
-if sys.version_info >= (3, 14):
+try:
+    from pydantic.v1 import (
+        BaseModel as _PydanticV1BaseModel,  # pyright: ignore[reportMissingImports]
+    )
+    from pydantic.v1 import (
+        ValidationError as _PydanticV1ValidationError,  # pyright: ignore[reportMissingImports]
+    )
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
-else:
-    try:
-        from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-            BaseModel as _PydanticV1BaseModel,
-        )
-        from pydantic.v1 import (  # pyright: ignore[reportMissingImports]
-            ValidationError as _PydanticV1ValidationError,
-        )
-    except (ImportError, ModuleNotFoundError):
-        _PydanticV1BaseModel = None  # type: ignore[assignment,misc]
-        _PydanticV1ValidationError = None  # type: ignore[assignment,misc]
 
 try:
-    from pydantic import (  # pyright: ignore[reportMissingImports]
-        BaseModel as _PydanticV2BaseModel,
+    from pydantic import (
+        BaseModel as _PydanticV2BaseModel,  # pyright: ignore[reportMissingImports]
     )
-    from pydantic import (  # pyright: ignore[reportMissingImports]
-        ValidationError as _PydanticV2ValidationError,
+    from pydantic import (
+        ValidationError as _PydanticV2ValidationError,  # pyright: ignore[reportMissingImports]
     )
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError):  # pragma: no cover
     _PydanticV2BaseModel = None  # type: ignore[assignment,misc]
     _PydanticV2ValidationError = None  # type: ignore[assignment,misc]
 
@@ -134,18 +121,20 @@ class Schema:
             if name in ("model_config", "model_fields") or name.startswith("_"):
                 continue
             default = ...
+            alias = None
             for klass in cls.__mro__:
                 if name in klass.__dict__:
                     val = klass.__dict__[name]
                     if isinstance(val, FieldInfo):
                         default = val.default
+                        alias = val.alias
                     elif not isinstance(
                         val, (type, classmethod, staticmethod, property)
                     ):
                         if not callable(val):
                             default = val
                     break
-            field = FieldInfo(default=default)
+            field = FieldInfo(default=default, alias=alias)
             field.annotation = annotation
             fields[name] = field
 
@@ -306,13 +295,6 @@ def resolve_type_hints(func):
 # === Type Validation ===
 
 
-def _is_generator_value(value):
-    """Check if value is a generator/iterator that shouldn't be consumed."""
-    return isinstance(
-        value, (GeneratorType, collections.abc.Iterator)
-    ) and not isinstance(value, (str, bytes))
-
-
 def _error_type_for(annotation):
     """Get an error type string for an annotation."""
     if annotation is int or annotation is PositiveInt:
@@ -326,292 +308,17 @@ def _error_type_for(annotation):
     return "value_error"
 
 
-
 def validate_type(value, annotation):
     """Validate value against a type annotation.
 
     Returns None if valid, or an error message string if invalid.
-    Generators/iterators always pass through without validation.
     """
-    if annotation is Any or annotation is inspect.Parameter.empty:
+    ctx = Ctx()
+    if _tc2_check_type(value, annotation, ctx=ctx):
         return None
-
-    if annotation is type(None):
-        return None if value is None else "Input should be None"
-
-    # Generators always pass through (they can't be validated without consumption)
-    if _is_generator_value(value):
-        return None
-
-    return _check_with_typeguard(value, annotation)
-
-
-def _check_with_typeguard(value, annotation):
-    """Delegate type checking to the vendored typeguard module.
-
-    Returns None if valid, or an error message string if invalid.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", TypeHintWarning)
-        try:
-            _typeguard_check_type(
-                value,
-                annotation,
-                collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS,
-            )
-        except _TypeCheckError as exc:
-            return str(exc)
-    return None
-
-
-def _confection_leaf_checker(value, origin_type, args, memo):
-    """Checker for types where confection has special coercion/validation."""
-    err = _validate_plain_type(value, origin_type)
-    if err is not None:
-        raise _TypeCheckError(err)
-
-
-def _confection_schema_checker(value, origin_type, args, memo):
-    """Checker for Schema subclasses — validate dicts against schema fields."""
-    if isinstance(value, dict):
-        errors = _validate_schema(
-            value,
-            origin_type.model_fields,
-            origin_type.model_config,
-            origin_type.model_config.get("alias_generator"),
-        )
-        if errors:
-            raise _TypeCheckError(
-                f"is not a valid {origin_type.__name__}"
-            )
-    elif not isinstance(value, origin_type):
-        raise _TypeCheckError(
-            f"is not an instance of {origin_type.__name__}"
-        )
-
-
-_STRICT_CHECKS = {
-    int: (lambda v: type(v) is int and not isinstance(v, bool),
-          "is not a valid integer (strict)"),
-    float: (lambda v: type(v) is float,
-            "is not a valid float (strict)"),
-    str: (lambda v: type(v) is str,
-          "is not a valid string (strict)"),
-    bool: (lambda v: type(v) is bool,
-           "is not a valid boolean (strict)"),
-}
-
-
-def _confection_strict_checker(value, origin_type, args, memo):
-    """Checker for scalar types under Annotated[X, Strict()]."""
-    if origin_type in _STRICT_CHECKS:
-        check_fn, err_msg = _STRICT_CHECKS[origin_type]
-        if not check_fn(value):
-            raise _TypeCheckError(err_msg)
-    else:
-        # Not a type we have strict rules for — fall back to normal leaf check
-        _confection_leaf_checker(value, origin_type, args, memo)
-
-
-def _has_strict_extras(extras):
-    """Check if Annotated extras contain Strict metadata."""
-    return any(
-        getattr(m, "strict", False) for m in extras if hasattr(m, "strict")
-    )
-
-
-def _confection_str_enum_checker(value, origin_type, args, memo):
-    """Checker for str enums — accept a string if it's a valid member value."""
-    try:
-        origin_type(value)
-    except (ValueError, KeyError):
-        members = ", ".join(repr(m.value) for m in origin_type)
-        raise _TypeCheckError(f"is not a valid {origin_type.__name__}: expected one of {members}")
-
-
-def _confection_checker_lookup(origin_type, args, extras):
-    """Lookup function registered with typeguard that intercepts types
-    confection handles specially — plain scalars with coercion, pydantic
-    constrained types with validator hooks, Schema subclasses, etc.
-
-    Typeguard strips Annotated before calling this, passing the metadata
-    as ``extras``.  So for ``Annotated[int, Strict()]`` we see
-    ``origin_type=int, extras=(Strict(),)``.
-    """
-    # Annotated with Strict metadata — enforce exact type
-    if extras and _has_strict_extras(extras):
-        return _confection_strict_checker
-    if origin_type in (int, float, str, bool):
-        return _confection_leaf_checker
-    if origin_type in (StrictBool, StrictFloat, PositiveInt):
-        return _confection_leaf_checker
-    if isinstance(origin_type, type) and issubclass(origin_type, PurePath):
-        return _confection_leaf_checker
-    if isinstance(origin_type, type) and issubclass(origin_type, Schema):
-        return _confection_schema_checker
-    # str enums — accept plain strings that are valid members
-    if isinstance(origin_type, type) and issubclass(origin_type, str) and issubclass(origin_type, Enum):
-        return _confection_str_enum_checker
-    # Pydantic types with validator hooks (e.g. pydantic.v1.types.PositiveInt)
-    if isinstance(origin_type, type) and (
-        hasattr(origin_type, "__get_validators__")
-        or hasattr(origin_type, "__get_pydantic_core_schema__")
-    ):
-        return _confection_leaf_checker
-    return None
-
-
-def _register_confection_checkers():
-    from typeguard._checkers import checker_lookup_functions
-
-    # Insert at the front so confection's lookup takes priority
-    checker_lookup_functions.insert(0, _confection_checker_lookup)
-
-
-_register_confection_checkers()
-
-
-def _validate_plain_type(value, typ):
-    """Validate value against a plain (non-generic) type."""
-    if typ is bool:
-        if not isinstance(value, bool):
-            return "Input should be a valid boolean"
-        return None
-
-    if typ is int:
-        if isinstance(value, bool):
-            return (
-                "Input should be a valid integer, unable to parse string as an integer"
-            )
-        if isinstance(value, int):
-            return None
-        if isinstance(value, str):
-            try:
-                int(value)
-                return None
-            except (ValueError, TypeError):
-                pass
-        return "Input should be a valid integer, unable to parse string as an integer"
-
-    if typ is float:
-        if isinstance(value, bool):
-            return "Input should be a valid number"
-        if isinstance(value, (int, float)):
-            return None
-        if isinstance(value, str):
-            try:
-                float(value)
-                return None
-            except (ValueError, TypeError):
-                pass
-        return "Input should be a valid number"
-
-    if typ is str:
-        if isinstance(value, str):
-            return None
-        return "Input should be a valid string"
-
-    # Path: accept strings (pydantic coerces str → Path)
-    if issubclass(typ, PurePath):
-        if isinstance(value, (str, PurePath)):
-            return None
-        return "Input should be a valid path"
-
-    # Custom class - isinstance check
-    try:
-        if isinstance(value, typ):
-            return None
-        # Types that declare custom validation via pydantic's schema protocol
-        # (e.g. thinc's Floats2d).  Extract and call the validator directly
-        # — the hook returns a plain dict, no pydantic import needed.
-        if hasattr(typ, "__get_pydantic_core_schema__"):
-            return _call_pydantic_schema_validator(typ, value)
-        # pydantic v1 protocol: __get_validators__ yields single-arg
-        # validator functions.
-        if hasattr(typ, "__get_validators__"):
-            return _call_pydantic_v1_validators(typ, value)
-        # For constrained subtypes without validator hooks: if the
-        # annotation inherits from the value's type, the value is
-        # structurally compatible.
-        if issubclass(typ, type(value)):
-            return None
-    except TypeError:
-        return None
-
-    return f"Input should be an instance of {getattr(typ, '__name__', str(typ))}"
-
-
-class _AnySchemaHandler:
-    """Minimal stand-in for pydantic's GetCoreSchemaHandler.
-
-    Passed to __get_pydantic_core_schema__ so we can extract the
-    validator function without importing pydantic.  The handler is
-    only called as ``handler(source_type)`` and must return a core
-    schema dict — ``{"type": "any"}`` tells pydantic "accept anything"
-    which is the right inner schema for a plain validator.
-    """
-
-    def __call__(self, _source_type):
-        return {"type": "any"}
-
-
-def _call_pydantic_schema_validator(typ, value):
-    """Call the validator from a type's __get_pydantic_core_schema__ hook.
-
-    The hook returns a plain dict describing the schema.  We extract the
-    validator function and call it directly — no pydantic import needed.
-    Returns None on success, or an error message string on failure.
-    """
-    schema = typ.__get_pydantic_core_schema__(typ, _AnySchemaHandler())
-    # Navigate the schema dict to find the validator function.
-    # Typical shapes:
-    #   {"type": "function-after", "function": {"type": "no-info", "function": <fn>}, ...}
-    #   {"type": "function-plain", "function": {"type": "no-info", "function": <fn>}}
-    fn_entry = schema.get("function", {})
-    if isinstance(fn_entry, dict):
-        validator = fn_entry.get("function")
-    else:
-        return None  # unrecognised shape — can't extract validator
-    if not callable(validator):
-        return None
-    try:
-        validator(value)
-    except (ValueError, TypeError, AssertionError) as e:
-        return str(e)
-    return None
-
-
-def _call_pydantic_v1_validators(typ, value):
-    """Call validators from a type's __get_validators__ hook (pydantic v1).
-
-    Validators may accept 1 arg (value), 2 args (value, field), or
-    3 args (value, field, config).  For multi-arg validators that need
-    field metadata (like number constraints), we build a minimal shim.
-    """
-    for validator in typ.__get_validators__():
-        try:
-            nparams = len(inspect.signature(validator).parameters)
-        except (ValueError, TypeError):
-            nparams = 1
-        if nparams > 2:
-            continue  # skip validators requiring pydantic config objects
-        try:
-            if nparams == 1:
-                value = validator(value)
-            else:
-                value = validator(value, _PydanticV1FieldShim(typ))
-        except (ValueError, TypeError, AssertionError) as e:
-            return str(e)
-    return None
-
-
-class _PydanticV1FieldShim:
-    """Minimal shim for pydantic v1 ModelField, providing just enough
-    for constraint validators (number_size_validator etc.)."""
-
-    def __init__(self, typ):
-        self.type_ = typ
-
+    if ctx.errors:
+        return str(ctx.errors[0])
+    return f"{value!r} does not match {annotation}"  # pragma: no cover -- defensive fallback
 
 
 # === Schema Validation ===
@@ -729,8 +436,8 @@ def _extract_pydantic_fields(pydantic_cls):
     fields = {}
 
     if hasattr(pydantic_cls, "model_fields"):
-        # pydantic v2 interface — check before __fields__ because pydantic v2
-        # exposes __fields__ as a deprecated property that triggers warnings
+        # pydantic v2 interface (check first — v2 also exposes __fields__
+        # as a deprecated shim, so we must not fall into the v1 branch)
         for name, pyd_field in pydantic_cls.model_fields.items():
             annotation = pyd_field.annotation
             if pyd_field.is_required():
@@ -780,13 +487,7 @@ def _extract_pydantic_config(pydantic_cls):
     """Extract model config from a pydantic BaseModel class (v1 or v2)."""
     config = {"extra": "allow"}
 
-    if hasattr(pydantic_cls, "model_config") and isinstance(
-        pydantic_cls.model_config, dict
-    ):
-        # pydantic v2: dict — check before __config__ because pydantic v2
-        # exposes __config__ as a deprecated property that triggers warnings
-        config = dict(pydantic_cls.model_config)
-    elif hasattr(pydantic_cls, "__config__"):
+    if hasattr(pydantic_cls, "__config__"):
         # pydantic v1: inner class Config
         cfg = pydantic_cls.__config__
         extra = getattr(cfg, "extra", "allow")
@@ -796,6 +497,11 @@ def _extract_pydantic_config(pydantic_cls):
         config["extra"] = extra if isinstance(extra, str) else str(extra)
         if hasattr(cfg, "arbitrary_types_allowed"):
             config["arbitrary_types_allowed"] = cfg.arbitrary_types_allowed
+    elif hasattr(pydantic_cls, "model_config") and isinstance(
+        pydantic_cls.model_config, dict
+    ):
+        # pydantic v2: dict
+        config = dict(pydantic_cls.model_config)
 
     return config
 
@@ -845,10 +551,12 @@ def ensure_schema(schema_cls):
                 pyd_cls.model_validate(data)
             elif hasattr(pyd_cls, "parse_obj"):
                 pyd_cls.parse_obj(data)
-            else:
-                pyd_cls(**data)
+            else:  # pragma: no cover -- all pydantic versions have model_validate or parse_obj
+                pyd_cls(**data)  # pragma: no cover
         except pyd_validation_err as e:
-            raise ValidationError(e.errors()) from None  # pyright: ignore[reportAttributeAccessIssue]
+            raise ValidationError(
+                e.errors()  # pyright: ignore[reportAttributeAccessIssue]
+            ) from None
         # Return attribute-accessible result with defaults filled in
         result_data = dict(data)
         for name, field in cls.model_fields.items():

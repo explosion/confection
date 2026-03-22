@@ -1,0 +1,4 @@
+{
+  "exclude": ["confection/tests"],
+  "reportMissingImports": "warning"
+}
