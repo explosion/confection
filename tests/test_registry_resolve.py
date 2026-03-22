@@ -1,24 +1,25 @@
 """Test registry.resolve() and the Promise lifecycle."""
+
+from typing import Callable, List
+
 import catalogue
 import pytest
-from typing import Callable, List
-from functools import partial
 
 from confection import Config, registry
+from confection._constants import ARGS_FIELD_ALIAS, RESERVED_FIELDS_REVERSE
 from confection._errors import ConfigValidationError
 from confection._registry import (
     Promise,
-    insert_promises,
-    resolve_promises,
-    fix_positionals,
+    _deep_copy_with_uncopyable,
     _is_config_section,
     alias_generator,
-    _deep_copy_with_uncopyable,
+    fix_positionals,
+    insert_promises,
+    resolve_promises,
 )
-from confection._constants import ARGS_FIELD_ALIAS, RESERVED_FIELDS_REVERSE
-
 
 # --- Test registry setup ---
+
 
 class _test_registry(registry):
     namespace = "test_resolve"
@@ -72,23 +73,27 @@ def test_resolve_with_defaults():
 
 def test_resolve_nested_promise():
     """A promise arg can be another promise."""
-    config = Config({
-        "optimizer": {
-            "@optimizers": "cool.v1",
-            "learn_rate": {
-                "@schedules": "decay.v1",
-                "base_rate": 0.001,
-                "repeat": 4,
-            },
+    config = Config(
+        {
+            "optimizer": {
+                "@optimizers": "cool.v1",
+                "learn_rate": {
+                    "@schedules": "decay.v1",
+                    "base_rate": 0.001,
+                    "repeat": 4,
+                },
+            }
         }
-    })
+    )
     result = _test_registry.resolve(config)
     assert result["optimizer"]["learn_rate"] == [0.001] * 4
     assert result["optimizer"]["beta1"] == 0.9
 
 
 def test_resolve_non_promise_passthrough():
-    config = Config({"training": {"epochs": 10}, "cat": {"@cats": "catsie.v1", "evil": True}})
+    config = Config(
+        {"training": {"epochs": 10}, "cat": {"@cats": "catsie.v1", "evil": True}}
+    )
     result = _test_registry.resolve(config)
     assert result["training"] == {"epochs": 10}
     assert result["cat"] == "scratch!"
@@ -255,8 +260,10 @@ def test_deep_copy_scalar():
 
 def test_deep_copy_generator():
     """Generators can't be deepcopied — should pass through."""
+
     def gen():
         yield 1
+
     g = gen()
     copied = _deep_copy_with_uncopyable(g)
     assert copied is g  # same object, not copied
@@ -299,7 +306,10 @@ def test_registry_get_unknown_func():
 
 
 def test_get_constructor():
-    assert _test_registry.get_constructor({"@cats": "catsie.v1", "evil": True}) == ("cats", "catsie.v1")
+    assert _test_registry.get_constructor({"@cats": "catsie.v1", "evil": True}) == (
+        "cats",
+        "catsie.v1",
+    )
 
 
 def test_get_constructor_multiple_refs():
@@ -308,13 +318,17 @@ def test_get_constructor_multiple_refs():
 
 
 def test_parse_args():
-    args, kwargs = _test_registry.parse_args({"@cats": "catsie.v1", "evil": True, "cute": False})
+    args, kwargs = _test_registry.parse_args(
+        {"@cats": "catsie.v1", "evil": True, "cute": False}
+    )
     assert args == []
     assert kwargs == {"evil": True, "cute": False}
 
 
 def test_parse_args_with_positionals():
-    args, kwargs = _test_registry.parse_args({"@cats": "catsie.v1", "*": [1, 2], "evil": True})
+    args, kwargs = _test_registry.parse_args(
+        {"@cats": "catsie.v1", "*": [1, 2], "evil": True}
+    )
     assert args == [1, 2]
     assert kwargs == {"evil": True}
 

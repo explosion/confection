@@ -1,24 +1,15 @@
-import copy
 import inspect
-import sys
 from dataclasses import dataclass
-from types import GeneratorType
 from typing import (
-    Annotated,
     Any,
     Callable,
     Dict,
     Generic,
-    Iterator,
     List,
     Optional,
-    Sequence,
     Tuple,
-    Type,
     TypeVar,
     Union,
-    get_args,
-    get_origin,
 )
 
 import catalogue
@@ -27,7 +18,6 @@ from ._config import Config
 from ._constants import (
     ARGS_FIELD,
     ARGS_FIELD_ALIAS,
-    RESERVED_FIELDS,
     RESERVED_FIELDS_REVERSE,
 )
 from ._errors import ConfigValidationError
@@ -152,9 +142,7 @@ class registry:
         orig_config = config
         if not is_interpolated:
             config = Config(orig_config).interpolate()
-        filled = fill_config(
-            cls, config, overrides=overrides, validate=validate
-        )
+        filled = fill_config(cls, config, overrides=overrides, validate=validate)
         filled = Config(filled, section_order=section_order)
         # Merge the original config back to preserve variables if we started
         # with a config that wasn't interpolated. Here, we prefer variables to
@@ -289,29 +277,33 @@ def _validate_promise_args(
     for param_name, field in schema.model_fields.items():
         if param_name not in filled:
             if field.is_required():
-                errors.append({
-                    "loc": [parent, param_name] if parent else [param_name],
-                    "msg": f"missing required argument: '{param_name}'",
-                })
+                errors.append(
+                    {
+                        "loc": [parent, param_name] if parent else [param_name],
+                        "msg": f"missing required argument: '{param_name}'",
+                    }
+                )
         elif not is_promise(filled[param_name]):
             # Only validate non-promise values — promises will be validated
             # when they're resolved
             err = validate_type(filled[param_name], field.annotation)
             if err:
-                errors.append({
-                    "loc": [parent, param_name] if parent else [param_name],
-                    "msg": err,
-                })
+                errors.append(
+                    {
+                        "loc": [parent, param_name] if parent else [param_name],
+                        "msg": err,
+                    }
+                )
     # Check for unexpected arguments
-    known = set(schema.model_fields.keys()) | {
-        k for k in filled if k.startswith("@")
-    }
+    known = set(schema.model_fields.keys()) | {k for k in filled if k.startswith("@")}
     for key in filled:
         if key not in known:
-            errors.append({
-                "loc": [parent, key] if parent else [key],
-                "msg": f"unexpected argument: '{key}'",
-            })
+            errors.append(
+                {
+                    "loc": [parent, key] if parent else [key],
+                    "msg": f"unexpected argument: '{key}'",
+                }
+            )
     if errors:
         raise ConfigValidationError(
             config=filled,
@@ -335,17 +327,13 @@ def insert_promises(
                 value,
             )
         elif isinstance(value, dict):
-            output[key] = insert_promises(
-                registry, value, resolve=resolve
-            )
+            output[key] = insert_promises(registry, value, resolve=resolve)
         else:
             output[key] = value
     return output
 
 
-def resolve_promises(
-    config: Dict[str, Dict[str, Any]]
-) -> Dict[str, Dict[str, Any]]:
+def resolve_promises(config: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     output = {}
     for key, value in config.items():
         if isinstance(value, dict):
@@ -421,8 +409,12 @@ def apply_overrides(
         err = [{"loc": path, "msg": err_msg}]
         node = output
         for subkey in path[:-1]:
-            if not isinstance(node, dict) or subkey not in node:  # pragma: no cover -- overrides validated in _parser
-                raise ConfigValidationError(errors=err, title=err_title)  # pragma: no cover
+            if (
+                not isinstance(node, dict) or subkey not in node
+            ):  # pragma: no cover -- overrides validated in _parser
+                raise ConfigValidationError(
+                    errors=err, title=err_title
+                )  # pragma: no cover
             node = node[subkey]
         if path[-1] not in node:  # pragma: no cover
             raise ConfigValidationError(errors=err, title=err_title)  # pragma: no cover

@@ -1,10 +1,12 @@
 """Test schema validation and default filling at the Config layer."""
-import pytest
+
 from typing import List, Optional
+
+import pytest
 
 from confection import Config
 from confection._errors import ConfigValidationError
-from confection.validation import Schema, Field
+from confection.validation import Schema
 
 
 class TrainingSchema(Schema):
@@ -24,6 +26,7 @@ class FullSchema(Schema):
 
 
 # -- fill_defaults --
+
 
 def test_fill_defaults_top_level():
     config = Config({"training": {"patience": 10}})
@@ -53,8 +56,11 @@ def test_fill_defaults_returns_self():
 
 # -- validate --
 
+
 def test_validate_passes():
-    config = Config({"training": {"patience": 10, "dropout": 0.2}, "nlp": {"lang": "en"}})
+    config = Config(
+        {"training": {"patience": 10, "dropout": 0.2}, "nlp": {"lang": "en"}}
+    )
     config.validate(FullSchema)  # should not raise
 
 
@@ -65,21 +71,28 @@ def test_validate_missing_required():
 
 
 def test_validate_wrong_type():
-    config = Config({"training": {"patience": "nope", "dropout": 0.2}, "nlp": {"lang": "en"}})
+    config = Config(
+        {"training": {"patience": "nope", "dropout": 0.2}, "nlp": {"lang": "en"}}
+    )
     with pytest.raises(ConfigValidationError):
         config.validate(FullSchema)
 
 
 # -- from_str with schema --
 
+
 def test_from_str_with_schema():
-    config = Config().from_str("""
+    config = Config().from_str(
+        """
 [training]
 patience = 10
 
 [nlp]
 lang = "en"
-""", interpolate=False, schema=FullSchema)
+""",
+        interpolate=False,
+        schema=FullSchema,
+    )
     assert config["training"]["patience"] == 10
     assert config["training"]["dropout"] == 0.2
     assert config["training"]["use_vectors"] is False
@@ -87,27 +100,36 @@ lang = "en"
 
 def test_from_str_schema_validates():
     with pytest.raises(ConfigValidationError):
-        Config().from_str("""
+        Config().from_str(
+            """
 [training]
 dropout = 0.5
 
 [nlp]
 lang = "en"
-""", interpolate=False, schema=FullSchema)
+""",
+            interpolate=False,
+            schema=FullSchema,
+        )
 
 
 def test_from_str_schema_with_interpolation():
-    config = Config().from_str("""
+    config = Config().from_str(
+        """
 [training]
 patience = 10
 
 [nlp]
 lang = "en"
-""", interpolate=True, schema=FullSchema)
+""",
+        interpolate=True,
+        schema=FullSchema,
+    )
     assert config["training"]["dropout"] == 0.2
 
 
 # -- Schema with extra="forbid" --
+
 
 class StrictSchema(Schema):
     model_config = {"extra": "forbid"}
@@ -122,6 +144,7 @@ def test_validate_extra_forbidden():
 
 
 # -- Schema with Optional fields --
+
 
 class OptionalSchema(Schema):
     name: str
@@ -140,6 +163,7 @@ def test_optional_field_accepts_value():
 
 
 # -- Flat schema (no nesting) --
+
 
 class FlatSchema(Schema):
     x: int

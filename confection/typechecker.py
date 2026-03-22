@@ -13,27 +13,28 @@ from __future__ import annotations
 
 import collections.abc
 import inspect
-from dataclasses import dataclass, field, fields as dataclass_fields, is_dataclass
+import types
+from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
+from dataclasses import is_dataclass
 from enum import Enum
 from pathlib import PurePath
 from types import GeneratorType
 from typing import (
+    Annotated,
     Any,
     ForwardRef,
-    Union,
-    Optional,
     Literal,
-    Annotated,
     TypeVar,
-    get_origin,
+    Union,
     get_args,
+    get_origin,
 )
-import types
-
 
 # ---------------------------------------------------------------------------
 # Error accumulation
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class TypeCheckError:
@@ -61,6 +62,7 @@ class Ctx:
 # ---------------------------------------------------------------------------
 # Main entry points
 # ---------------------------------------------------------------------------
+
 
 def check_type(value, annotation, custom_handlers=None, ctx=None):
     if custom_handlers is None:
@@ -90,6 +92,7 @@ def check_branch(value, annotation, custom_handlers, ctx):
 # ---------------------------------------------------------------------------
 # get_annot_branches: peel Union/Optional into flat alternatives
 # ---------------------------------------------------------------------------
+
 
 def get_annot_branches(annotation):
     origin = get_origin(annotation)
@@ -164,7 +167,9 @@ def outer_match(value, annotation):
         if args and args[0] is not Any:
             try:
                 return issubclass(value, args[0])
-            except TypeError:  # pragma: no cover -- modern Python handles Union in issubclass
+            except (
+                TypeError
+            ):  # pragma: no cover -- modern Python handles Union in issubclass
                 return True  # pragma: no cover
         return True
 
@@ -278,10 +283,12 @@ def outer_match(value, annotation):
 # Helpers for outer_match
 # ---------------------------------------------------------------------------
 
+
 def _resolve_dataclass_hints(cls):
     """Resolve forward references in a dataclass's type annotations."""
     import sys
     from typing import get_type_hints
+
     mod = sys.modules.get(cls.__module__)
     globalns = vars(mod) if mod else None
     try:
@@ -310,7 +317,10 @@ def _strict_match(value, inner_type):
 
 class _AnySchemaHandler:
     """Minimal stand-in for pydantic's GetCoreSchemaHandler."""
-    def __call__(self, _source_type):  # pragma: no cover -- called internally by pydantic hooks
+
+    def __call__(
+        self, _source_type
+    ):  # pragma: no cover -- called internally by pydantic hooks
         return {"type": "any"}  # pragma: no cover
 
 
@@ -319,7 +329,9 @@ def _pydantic_v2_match(value, annotation):
     if isinstance(value, annotation):
         return True
     try:
-        schema = annotation.__get_pydantic_core_schema__(annotation, _AnySchemaHandler())
+        schema = annotation.__get_pydantic_core_schema__(
+            annotation, _AnySchemaHandler()
+        )
         fn_entry = schema.get("function", {})
         validator = fn_entry.get("function") if isinstance(fn_entry, dict) else None
         if callable(validator):
@@ -332,6 +344,7 @@ def _pydantic_v2_match(value, annotation):
 
 class _PydanticV1FieldShim:
     """Minimal shim providing field.type_ for pydantic v1 validators."""
+
     def __init__(self, typ):
         self.type_ = typ
 
@@ -361,7 +374,9 @@ def _pydantic_v1_match(value, annotation):
 
 # Origins that are sequence-like: one type arg, fan across elements
 SEQUENCE_ORIGINS = {
-    list, set, frozenset,
+    list,
+    set,
+    frozenset,
     collections.abc.Sequence,
     collections.abc.MutableSequence,
     collections.abc.Set,
@@ -387,7 +402,11 @@ def decompose(value, annotation, ctx):
     args = get_args(annotation)
 
     # Schema / model_fields annotation with dict value — fan out over fields
-    if isinstance(annotation, type) and hasattr(annotation, "model_fields") and isinstance(value, dict):
+    if (
+        isinstance(annotation, type)
+        and hasattr(annotation, "model_fields")
+        and isinstance(value, dict)
+    ):
         for name, field_info in annotation.model_fields.items():
             data_key = name
             if hasattr(field_info, "alias") and field_info.alias is not None:
@@ -397,7 +416,11 @@ def decompose(value, annotation, ctx):
         return
 
     # Dataclass annotation with dict value — fan out over fields
-    if isinstance(annotation, type) and is_dataclass(annotation) and isinstance(value, dict):
+    if (
+        isinstance(annotation, type)
+        and is_dataclass(annotation)
+        and isinstance(value, dict)
+    ):
         resolved_hints = _resolve_dataclass_hints(annotation)
         for f in dataclass_fields(annotation):
             if f.name in value:
@@ -406,7 +429,11 @@ def decompose(value, annotation, ctx):
         return
 
     # Dataclass annotation with dataclass value — match fields
-    if isinstance(annotation, type) and is_dataclass(annotation) and is_dataclass(value):
+    if (
+        isinstance(annotation, type)
+        and is_dataclass(annotation)
+        and is_dataclass(value)
+    ):
         resolved_hints = _resolve_dataclass_hints(annotation)
         for f in dataclass_fields(annotation):
             if hasattr(value, f.name):

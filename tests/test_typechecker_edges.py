@@ -1,11 +1,11 @@
 """Tests for typechecker edge cases."""
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Any, List
+from typing import Annotated, Any
 
-from confection.typechecker import check_type, Ctx
-from confection.validation import Schema, Field, validate_type
-
+from confection.typechecker import check_type
+from confection.validation import Field, Schema
 
 # --- custom_handlers ---
 
@@ -23,6 +23,7 @@ def test_custom_handler():
 try:
     from pydantic import Strict
 except ImportError:
+
     class Strict:  # type: ignore
         strict = True
 
@@ -85,7 +86,8 @@ def test_float_rejects_list():
 
 def test_type_non_class_arg():
     """Type[X] where X causes TypeError in issubclass should accept."""
-    from typing import Type, Union
+    from typing import Type
+
     # This would raise TypeError in issubclass
     assert check_type(int, Type[Any])
 
@@ -138,6 +140,7 @@ def test_unknown_annotation():
     """An annotation that doesn't match any branch returns False."""
     # A module object isn't a type, not a TypeVar, not a string, etc.
     import os
+
     assert not check_type(42, os)
 
 
@@ -146,11 +149,13 @@ def test_unknown_annotation():
 
 def test_pydantic_v1_validator_many_params():
     """Validators with >2 params are skipped."""
+
     class MyType:
         @classmethod
         def __get_validators__(cls):
             def three_params(v, field, config):
                 return v
+
             yield three_params
 
     # Should still pass (validator is skipped)
@@ -159,6 +164,7 @@ def test_pydantic_v1_validator_many_params():
 
 def test_pydantic_v1_validator_sig_error():
     """Validators with un-inspectable signatures default to 1 param."""
+
     class MyType:
         @classmethod
         def __get_validators__(cls):
@@ -173,6 +179,7 @@ def test_pydantic_v1_validator_sig_error():
 
 def test_pydantic_v2_no_function_key():
     """Schema without 'function' key in result."""
+
     class MyType:
         @classmethod
         def __get_pydantic_core_schema__(cls, source, handler):
@@ -183,6 +190,7 @@ def test_pydantic_v2_no_function_key():
 
 def test_pydantic_v2_isinstance_shortcut():
     """If value is already an instance, skip validator."""
+
     class MyType:
         @classmethod
         def __get_pydantic_core_schema__(cls, source, handler):
@@ -196,6 +204,7 @@ def test_pydantic_v2_isinstance_shortcut():
 
 def test_parameter_empty():
     import inspect
+
     assert check_type(42, inspect.Parameter.empty)
     assert check_type("anything", inspect.Parameter.empty)
 
@@ -206,6 +215,7 @@ def test_parameter_empty():
 def test_type_union_arg():
     """Type[Union[int, str]] — issubclass raises TypeError, should accept."""
     from typing import Type, Union
+
     assert check_type(int, Type[Union[int, str]])
 
 
@@ -226,6 +236,7 @@ def test_pydantic_v1_isinstance_shortcut():
 
 def test_pydantic_v1_uninspectable_sig():
     """Validator with uninspectable signature defaults to 1 param."""
+
     class MyType:
         @classmethod
         def __get_validators__(cls):
@@ -235,6 +246,7 @@ def test_pydantic_v1_uninspectable_sig():
                     if not isinstance(v, int):
                         raise ValueError
                     return v
+
                 # Make signature() raise
                 __signature__ = property(lambda self: (_ for _ in ()).throw(ValueError))
 

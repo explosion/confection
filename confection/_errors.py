@@ -1,7 +1,9 @@
 from typing import Optional
 
+
 class ConfectionError(ValueError):
     ...
+
 
 class ConfigValidationError(ConfectionError):
     def __init__(

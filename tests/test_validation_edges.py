@@ -1,12 +1,13 @@
 """Tests for edge cases in validation.py."""
-import pytest
+
 from typing import Optional
+
+import pytest
 
 from confection.validation import (
     Field,
     FieldInfo,
     Schema,
-    ValidationError,
     _is_pydantic_model,
     _pydantic_instance_to_dict,
     _validate_schema,
@@ -14,7 +15,6 @@ from confection.validation import (
     ensure_schema,
     validate_type,
 )
-
 
 # --- Schema with FieldInfo as class default ---
 
@@ -130,6 +130,7 @@ def test_create_schema_plain_default():
 
 def test_from_function_unresolvable_forward_ref():
     """Forward refs that can't be resolved fall back to raw annotations."""
+
     # Create a function with an annotation that can't be resolved
     def func(x: "NonExistentType") -> None:  # noqa: F821
         pass
@@ -160,6 +161,7 @@ def test_validate_type_bool_error():
 def test_validate_type_complex_error():
     """Non-primitive type should give value_error."""
     from typing import List
+
     err = validate_type("not a list", List[int])
     assert err is not None
 
@@ -190,6 +192,7 @@ def test_validate_schema_bool_error_type():
 
 def test_validate_schema_positive_int_error_type():
     from confection.validation import PositiveInt
+
     f = FieldInfo(default=...)
     f.annotation = PositiveInt
     errors = _validate_schema({"x": -1}, {"x": f}, {"extra": "allow"}, None)
@@ -198,15 +201,16 @@ def test_validate_schema_positive_int_error_type():
 
 def test_validate_schema_strict_float_error_type():
     from confection.validation import StrictFloat
+
     f = FieldInfo(default=...)
     f.annotation = StrictFloat
     errors = _validate_schema({"x": "abc"}, {"x": f}, {"extra": "allow"}, None)
     assert errors[0]["type"] == "float_parsing"
 
 
-
 def test_validate_schema_generic_error_type():
     from typing import List
+
     f = FieldInfo(default=...)
     f.annotation = List[int]
     errors = _validate_schema({"x": "nope"}, {"x": f}, {"extra": "allow"}, None)
@@ -232,15 +236,19 @@ def test_is_pydantic_model_schema_subclass():
 
 def test_pydantic_instance_to_dict_v2():
     import pydantic
+
     class M(pydantic.BaseModel):
         x: int = 1
+
     assert _pydantic_instance_to_dict(M()) == {"x": 1}
 
 
 def test_pydantic_instance_to_dict_v1():
     from pydantic.v1 import BaseModel
+
     class M(BaseModel):
         x: int = 1
+
     assert _pydantic_instance_to_dict(M()) == {"x": 1}
 
 
@@ -263,6 +271,7 @@ def test_ensure_schema_plain_class():
 
 def test_v1_optional_field():
     from pydantic.v1 import BaseModel as V1Model
+
     class M(V1Model):
         x: Optional[int] = None
 
@@ -277,6 +286,7 @@ def test_v1_optional_field():
 
 def test_v2_pydantic_instance_default():
     import pydantic
+
     class Inner(pydantic.BaseModel):
         x: int = 1
 
@@ -293,6 +303,7 @@ def test_v2_pydantic_instance_default():
 
 def test_v1_pydantic_instance_default():
     from pydantic.v1 import BaseModel as V1Model
+
     class Inner(V1Model):
         x: int = 1
 

@@ -1,12 +1,13 @@
 """Test Config serialization methods: to_str, from_str, to_bytes, from_bytes,
 to_disk, from_disk, copy, merge, interpolate."""
+
 import pytest
 
 from confection import Config
-from confection._errors import ConfigValidationError, ConfectionError
-
+from confection._errors import ConfectionError
 
 # -- to_str / from_str basics (beyond the hypothesis tests) --
+
 
 def test_to_str_from_str_roundtrip():
     data = {"training": {"lr": 0.001, "epochs": 10}, "model": {"name": "cnn"}}
@@ -24,6 +25,7 @@ def test_empty_config():
 
 
 # -- to_bytes / from_bytes --
+
 
 def test_to_bytes():
     config = Config({"a": {"x": 1}})
@@ -49,6 +51,7 @@ def test_from_bytes_with_overrides():
 
 
 # -- to_disk / from_disk --
+
 
 def test_to_disk_from_disk_roundtrip(tmp_path):
     config = Config({"section": {"key": "value", "num": 42}})
@@ -78,6 +81,7 @@ def test_from_disk_with_overrides(tmp_path):
 
 # -- copy --
 
+
 def test_copy_is_deep():
     config = Config({"a": {"x": [1, 2, 3]}})
     copied = config.copy()
@@ -94,6 +98,7 @@ def test_copy_preserves_metadata():
 
 
 # -- interpolate --
+
 
 def test_interpolate():
     config = Config().from_str(
@@ -114,6 +119,7 @@ def test_interpolate_returns_new_config():
 
 
 # -- merge --
+
 
 def test_merge_basic():
     base = Config({"a": {"x": 1, "y": 2}})
@@ -155,6 +161,7 @@ def test_merge_deep():
 
 
 # -- __init__ --
+
 
 def test_init_from_dict():
     config = Config({"a": {"x": 1}})

@@ -13,9 +13,10 @@ from configparser import (
     ParsingError,
 )
 from typing import Any, Dict, List
-from .util import try_dump_json, try_load_json, VARIABLE_RE
+
 from ._constants import SECTION_PREFIX
 from ._errors import ConfigValidationError
+from .util import VARIABLE_RE, try_dump_json, try_load_json
 
 
 def parse_config(
@@ -53,7 +54,9 @@ def parse_config(
             node = node.setdefault(part, {}) if part == "*" else node[part]
         node.setdefault(parts[-1], {})
     # Phase 2: Fill in values, processing breadth-first by section depth.
-    for section, values in sorted(config_parser.items(), key=lambda x: len(x[0].split("."))):
+    for section, values in sorted(
+        config_parser.items(), key=lambda x: len(x[0].split("."))
+    ):
         if section == "DEFAULT":
             continue
         parts = section.split(".")
@@ -151,20 +154,22 @@ def _validate_configparser(config_parser: ConfigParser) -> list[ConfigValidation
                 err_title = (
                     "Error parsing config section. Perhaps a section name is wrong?"
                 )
-                err = [{"loc": path, "msg": f"Section '{path[i-1]}' is not defined"}]
+                err = [{"loc": path, "msg": f"Section '{path[i - 1]}' is not defined"}]
                 errors.append(ConfigValidationError(errors=err, title=err_title))
                 break
         keys = set(config_parser.options(section))
         for other in section_names:
             if other.startswith(section + "."):
-                child = other[len(section) + 1:].split(".")[0]
+                child = other[len(section) + 1 :].split(".")[0]
                 if child in keys:
                     err = [{"loc": other.split("."), "msg": "found conflicting values"}]
                     errors.append(ConfigValidationError(errors=err))
     return errors
 
 
-def _validate_overrides(config_parser: ConfigParser, overrides: dict[str, Any]) -> list[ConfigValidationError]:
+def _validate_overrides(
+    config_parser: ConfigParser, overrides: dict[str, Any]
+) -> list[ConfigValidationError]:
     errors = []
     err_title = "Error parsing config overrides"
     for key in overrides:
@@ -181,7 +186,6 @@ def _validate_overrides(config_parser: ConfigParser, overrides: dict[str, Any]) 
     return errors
 
 
-
 def _interpret_value(value: Any) -> Any:
     """Interpret a single config value."""
     result = try_load_json(value)
@@ -195,21 +199,23 @@ def _interpret_value(value: Any) -> Any:
     return result
 
 
-def _replace_section_refs(root: dict[str, Any], node: dict[str, Any], parent: str = "") -> None:
+def _replace_section_refs(
+    root: dict[str, Any], node: dict[str, Any], parent: str = ""
+) -> None:
     """Replace section reference placeholders with actual dicts."""
     for key, value in node.items():
         key_parent = f"{parent}.{key}".strip(".")
         if isinstance(value, dict):
             _replace_section_refs(root, value, parent=key_parent)
         elif isinstance(value, list):
-            node[key] = [
-                _get_section_ref(root, v, parent=[parent, key]) for v in value
-            ]
+            node[key] = [_get_section_ref(root, v, parent=[parent, key]) for v in value]
         else:
             node[key] = _get_section_ref(root, value, parent=[parent, key])
 
 
-def _get_section_ref(root: Dict[str, Any], value: Any, *, parent: List[str] = []) -> Any:
+def _get_section_ref(
+    root: Dict[str, Any], value: Any, *, parent: List[str] = []
+) -> Any:
     """Resolve a single section reference placeholder, or return value as-is."""
     if isinstance(value, str) and value.startswith(
         f'"{SECTION_PREFIX}'
@@ -225,11 +231,7 @@ def _get_section_ref(root: Dict[str, Any], value: Any, *, parent: List[str] = []
         for item in parts:
             result = result[item]
         return result
-    elif (
-        isinstance(value, str)
-        and SECTION_PREFIX in value
-        and value != SECTION_PREFIX
-    ):
+    elif isinstance(value, str) and SECTION_PREFIX in value and value != SECTION_PREFIX:
         err_desc = (
             "Can't reference whole sections or return values of function "
             "blocks inside a string or list\n\nYou can change your variable to "
@@ -383,8 +385,6 @@ class _CustomInterpolation(ExtendedInterpolation):
             - value: "hello ${section}" -> invalid
         """
         return f'"{SECTION_PREFIX}{name}"'
-
-
 
 
 __all__ = ["parse_config", "serialize_config"]
