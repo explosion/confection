@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import copy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Self, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
+if TYPE_CHECKING:
+    from typing import Self
 
 from ._errors import ConfectionError, ConfigValidationError
 from ._parser import parse_config, serialize_config
