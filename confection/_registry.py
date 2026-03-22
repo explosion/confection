@@ -328,9 +328,11 @@ def _validate_promise_args(
                     }
                 )
     # Check for unexpected arguments (@ keys are registry refs, * is positional args)
-    known = set(schema.model_fields.keys()) | {
-        k for k in filled if k.startswith("@")
-    } | {ARGS_FIELD}
+    known = (
+        set(schema.model_fields.keys())
+        | {k for k in filled if k.startswith("@")}
+        | {ARGS_FIELD}
+    )
     for key in filled:
         if key not in known:
             errors.append(
