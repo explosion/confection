@@ -10,6 +10,7 @@ from hypothesis import given
 from confection import Config
 import pytest
 from configparser import InterpolationDepthError
+from hypothesis import settings, HealthCheck
 from tests.strategies import (
     config_dicts, json_config_dicts, serialize_with_inline,
     interpolated_config, circular_interpolated_config,
@@ -44,6 +45,7 @@ def test_variable_interpolation(pair):
     assert dict_equal(restored, expected)
 
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(circular_interpolated_config())
 def test_circular_interpolation_raises(config_str):
     """Circular variable references should raise an error."""

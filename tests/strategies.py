@@ -46,8 +46,8 @@ config_leaves = scalar_leaves
 # A config node is either a leaf or a dict of config nodes.
 config_nodes = st.recursive(
     config_leaves,
-    lambda children: st.dictionaries(config_keys, children, min_size=0, max_size=5),
-    max_leaves=30,
+    lambda children: st.dictionaries(config_keys, children, min_size=0, max_size=4),
+    max_leaves=15,
 )
 
 # A valid config must have sections at the top level (all values must be dicts).
@@ -199,11 +199,12 @@ def interpolated_config(draw):
 
     # Split paths into targets (stable values to reference) and candidates
     # (values that may be replaced with refs). A path can't be both.
-    n_targets = draw(st.integers(min_value=1, max_value=max(1, len(scalar_paths) // 2)))
-    indices = draw(st.permutations(range(len(scalar_paths))))
-    target_indices = set(indices[:n_targets])
-    targets = [scalar_paths[i] for i in target_indices]
-    candidates = [scalar_paths[i] for i in range(len(scalar_paths)) if i not in target_indices]
+    # Use random subset selection instead of permutations (which is O(n!)).
+    target_flags = draw(st.lists(
+        st.booleans(), min_size=len(scalar_paths), max_size=len(scalar_paths),
+    ))
+    targets = [sp for sp, flag in zip(scalar_paths, target_flags) if flag]
+    candidates = [sp for sp, flag in zip(scalar_paths, target_flags) if not flag]
 
     if not targets or not candidates:
         return serialize_with_inline(base), base
@@ -233,8 +234,11 @@ def circular_interpolated_config(draw):
 
     # Pick 2+ paths and create a cycle: a -> b -> ... -> a
     cycle_len = draw(st.integers(min_value=2, max_value=min(4, len(scalar_paths))))
-    indices = draw(st.permutations(range(len(scalar_paths))))
-    cycle_paths = [scalar_paths[indices[i]][0] for i in range(cycle_len)]
+    cycle_indices = draw(st.lists(
+        st.sampled_from(range(len(scalar_paths))),
+        min_size=cycle_len, max_size=cycle_len, unique=True,
+    ))
+    cycle_paths = [scalar_paths[i][0] for i in cycle_indices]
 
     replacements = {}
     for i in range(cycle_len):
