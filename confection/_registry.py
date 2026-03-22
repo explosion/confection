@@ -32,6 +32,7 @@ from ._constants import (
 )
 from ._errors import ConfigValidationError
 from .util import is_promise
+from .validation import Schema
 
 _PromisedType = TypeVar("_PromisedType")
 
@@ -212,7 +213,40 @@ def fill_config(
     overrides: Dict[str, Dict[str, Any]] = {},
 ) -> Dict[str, Any]:
     overrided = apply_overrides(dict(config), overrides)
-    return overrided
+    return _fill_defaults(registry, overrided)
+
+
+def _fill_defaults(registry, config: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively fill default values from registered function signatures."""
+    output = dict(config)
+    for key, value in output.items():
+        if is_promise(value):
+            # Look up the function and fill its defaults
+            output[key] = _fill_promise_defaults(registry, value)
+        elif isinstance(value, dict):
+            output[key] = _fill_defaults(registry, value)
+    return output
+
+
+def _fill_promise_defaults(registry, promise_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill default argument values for a promise block from the function signature."""
+    reg_name, func_name = registry.get_constructor(promise_dict)
+    func = registry.get(reg_name, func_name)
+    schema = Schema.from_function(func)
+    filled = dict(promise_dict)
+    # Fill in defaults from the schema
+    for param_name, field in schema.model_fields.items():
+        if param_name not in filled and not field.is_required():
+            filled[param_name] = field.default
+    # Recurse into nested values (which may themselves be promises)
+    for key, value in filled.items():
+        if key.startswith("@"):
+            continue
+        if is_promise(value):
+            filled[key] = _fill_promise_defaults(registry, value)
+        elif isinstance(value, dict):
+            filled[key] = _fill_defaults(registry, value)
+    return filled
 
 
 def insert_promises(
