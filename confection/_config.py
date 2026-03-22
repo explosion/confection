@@ -3,13 +3,9 @@ import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Self
 
-from ._constants import (
-    SECTION_PREFIX,
-    VARIABLE_RE,
-)
 from ._errors import ConfigValidationError, ConfectionError
-from .util import is_promise, try_dump_json, try_load_json
-from ._parser import get_configparser, ConfigParser, validate_configparser, validate_overrides, ParsingError, set_overrides
+from .util import is_promise, try_dump_json
+from ._parser import get_configparser, ConfigParser, interpret_configparser, validate_configparser, validate_overrides, ParsingError, set_overrides
 
 
 class Config(dict):
@@ -65,50 +61,6 @@ class Config(dict):
         # on all values, which isn't enough.
         return type(self)().from_str(self.to_str())
 
-    def interpret_config(self, config_parser: ConfigParser) -> None:
-        """Interpret a config, parse nested sections and parse the values
-        as JSON. Mostly used internally and modifies the config in place.
-        """
-        section_parts = [section.split(".") for section in config_parser.sections()]
-        # Phase 1:
-        # * Insert dict for * values (to represent positionals)
-        # * Insert {} to represent leaf-sections
-        for parts in section_parts:
-            node = self
-            for part in parts[:-1]:
-                if part == "*":
-                    node.setdefault(part, {})
-                else:
-                    node = node[part]
-            node.setdefault(parts[-1], {})
-        # Phase 2: Interpret values.
-        # Sort sections by depth, so that we can iterate breadth-first. This
-        # allows us to check that we're not expanding an undefined block.
-        for section, values in sorted(config_parser.items(), key=lambda x: len(x[0].split("."))):
-            if section == "DEFAULT":
-                # Skip [DEFAULT] section so it doesn't cause validation error
-                continue
-            parts = section.split(".")
-            node = self
-            for part in parts:
-                node = node[part]
-            for key in values:
-                node[key] = self._interpret_value(config_parser.get(section, key))
-        # Phase 3: Replace references to section blocks
-        _replace_section_refs(self, dict(self))
-
-    def _interpret_value(self, value: Any) -> Any:
-        """Interpret a single config value."""
-        result = try_load_json(value)
-        # If value is a string and it contains a variable, use original value
-        # (not interpreted string, which could lead to double quotes:
-        # ${x.y} -> "${x.y}" -> "'${x.y}'"). Make sure to check it's a string,
-        # so we're not keeping lists as strings.
-        # NOTE: This currently can't handle uninterpolated values like [${x.y}]!
-        if isinstance(result, str) and VARIABLE_RE.search(value):
-            result = value
-        return result
-
     def copy(self) -> Self:
         """Deepcopy the config."""
         try:
@@ -151,9 +103,9 @@ class Config(dict):
         if errors:
             raise errors[0]
         set_overrides(config_parser, overrides)
-        # Clear previous values from self, so that we're loading clean
+        # Clear previous values and populate from the configparser
         self.clear()
-        self.interpret_config(config_parser)
+        self.update(interpret_configparser(config_parser))
         if overrides and interpolate:
             # do the interpolation. Avoids recursion because the new call from_str call
             # will have overrides as empty
@@ -268,53 +220,3 @@ def deep_merge_configs(
     return config
 
 
-def _replace_section_refs(config: Config, node: dict[str, Any], parent: str = "") -> None:
-    """Replace references to section blocks in the final config."""
-    for key, value in node.items():
-        key_parent = f"{parent}.{key}".strip(".")
-        if isinstance(value, dict):
-            _replace_section_refs(config, value, parent=key_parent)
-        elif isinstance(value, list):
-            node[key] = [
-                _get_section_ref(config, v, parent=[parent, key]) for v in value
-            ]
-        else:
-            node[key] = _get_section_ref(config, value, parent=[parent, key])
-
-
-def _get_section_ref(config: Config, value: Any, *, parent: List[str] = []) -> Any:
-    """Get a single section reference."""
-    # TODO: I don't get this part...
-    if isinstance(value, str) and value.startswith(
-        f'"{SECTION_PREFIX}'
-    ):  # pragma: no cover
-        value = try_load_json(value)  # pragma: no cover
-    if (
-        isinstance(value, str)
-        and value.startswith(SECTION_PREFIX)
-        and value != SECTION_PREFIX
-    ):
-        parts = value.replace(SECTION_PREFIX, "", 1).split(".")
-        result = config
-        for item in parts:
-            result = result[item]
-        return result
-    elif (
-        isinstance(value, str)
-        and SECTION_PREFIX in value
-        and value != SECTION_PREFIX
-    ):
-        # String value references a section (either a dict or return
-        # value of promise). We can't allow this, since variables are
-        # always interpolated *before* configs are resolved.
-        err_desc = (
-            "Can't reference whole sections or return values of function "
-            "blocks inside a string or list\n\nYou can change your variable to "
-            "reference a value instead. Keep in mind that it's not "
-            "possible to interpolate the return value of a registered "
-            "function, since variables are interpolated when the config "
-            "is loaded, and registered functions are resolved afterwards."
-        )
-        err = [{"loc": parent, "msg": "uses section variable in string or list"}]
-        raise ConfigValidationError(errors=err, desc=err_desc)
-    return value
