@@ -46,6 +46,7 @@ class Promise(Generic[_PromisedType]):
         kwargs = _recursive_resolve(self.kwargs)
         args = _recursive_resolve(self.var_args)
         args = list(args.values()) if isinstance(args, dict) else args
+        kwargs = _coerce_basemodel_args(self.getter, kwargs)
         return self.getter(*args, **kwargs)  # type: ignore
 
     @classmethod
@@ -64,6 +65,32 @@ class Promise(Generic[_PromisedType]):
             getter=getter,
         )
         return output
+
+
+def _coerce_basemodel_args(func, kwargs):
+    """Coerce dict kwargs to BaseModel instances where the function signature
+    expects a BaseModel subclass.  This lets registered functions receive
+    constructed model instances instead of raw dicts (issue #58).
+    """
+    try:
+        from typing import get_type_hints
+
+        hints = get_type_hints(func)
+    except Exception:
+        return kwargs
+    result = dict(kwargs)
+    for name, value in result.items():
+        if not isinstance(value, dict):
+            continue
+        hint = hints.get(name)
+        if hint is None or not isinstance(hint, type):
+            continue
+        # Check for pydantic BaseModel (v1 or v2)
+        if hasattr(hint, "model_validate"):
+            result[name] = hint.model_validate(value)
+        elif hasattr(hint, "parse_obj"):
+            result[name] = hint.parse_obj(value)
+    return result
 
 
 def _recursive_resolve(obj):

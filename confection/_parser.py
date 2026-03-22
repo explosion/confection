@@ -103,7 +103,11 @@ def serialize_config(
     for path, node in queue:
         section_name = ".".join(path)
         is_kwarg = path and path[-1] != "*"
-        if is_kwarg and not flattened.has_section(section_name):
+        has_leaves = any(not hasattr(v, "items") for v in node.values())
+        if path and has_leaves and not flattened.has_section(section_name):
+            # Create sections that have leaf values (including * sections).
+            flattened.add_section(section_name)
+        elif is_kwarg and not flattened.has_section(section_name):
             flattened.add_section(section_name)
         for key, value in node.items():
             child_path = f"{section_name}.{key}" if section_name else key
@@ -339,7 +343,17 @@ class _CustomInterpolation(ExtendedInterpolation):
                 try:
                     if len(path) == 1:
                         opt = parser.optionxform(path[0])
-                        if opt in map:
+                        # Check if the variable references a section rather
+                        # than a key in the current section.  If the key
+                        # exists in the current map but its raw value is the
+                        # same interpolation variable (self-reference), or if
+                        # the key doesn't exist in the map, treat it as a
+                        # section reference.
+                        is_section_ref = opt not in map
+                        if not is_section_ref:
+                            raw = map[opt]
+                            is_section_ref = raw.strip() == rawval.strip()
+                        if not is_section_ref:
                             v = map[opt]
                         else:
                             # We have block reference, store it as a special key
