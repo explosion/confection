@@ -1,6 +1,11 @@
 """
 A structural type checker with clean separation of concerns.
 
+The checker validates values against type annotations without requiring
+the types to be instantiated. It supports standard library types, generics,
+Union/Optional, Literal, Annotated, TypeVar, NewType, dataclasses, and
+pydantic-compatible custom types.
+
 Architecture:
     check_type          - entry point, dispatches to custom handlers or standard path
     get_annot_branches  - peels Union/Optional into flat alternatives
@@ -22,8 +27,13 @@ from types import GeneratorType
 from typing import (
     Annotated,
     Any,
+    Callable,
+    Dict,
     ForwardRef,
+    Iterator,
     Literal,
+    Optional,
+    Tuple,
     TypeVar,
     Union,
     get_args,
@@ -37,24 +47,34 @@ from typing import (
 
 @dataclass
 class TypeCheckError:
-    path: tuple
+    """A single type-check failure, recording the path, value, and expected type."""
+
+    path: Tuple[Any, ...]
     value: Any
     annotation: Any
 
-    def __str__(self):
+    def __str__(self) -> str:
         path_str = " → ".join(str(p) for p in self.path) if self.path else "root"
         return f"at {path_str}: {self.value!r} is not {self.annotation}"
 
 
 @dataclass
 class Ctx:
-    path: tuple = ()
-    errors: list = field(default_factory=list)
+    """Accumulates errors during a type-check traversal.
 
-    def child(self, segment):
+    All recursive calls share the same ``errors`` list via ``child()``,
+    so errors from any depth are collected in one place.
+    """
+
+    path: Tuple[Any, ...] = ()
+    errors: list[TypeCheckError] = field(default_factory=list)
+
+    def child(self, segment: Any) -> Ctx:
+        """Create a child context with *segment* appended to the path."""
         return Ctx(self.path + (segment,), self.errors)  # shared errors list
 
-    def fail(self, value, annotation):
+    def fail(self, value: Any, annotation: Any) -> None:
+        """Record a type-check failure at the current path."""
         self.errors.append(TypeCheckError(self.path, value, annotation))
 
 
@@ -63,7 +83,21 @@ class Ctx:
 # ---------------------------------------------------------------------------
 
 
-def check_type(value, annotation, custom_handlers=None, ctx=None):
+def check_type(
+    value: Any,
+    annotation: Any,
+    custom_handlers: Optional[Dict[type, Callable[..., bool]]] = None,
+    ctx: Optional[Ctx] = None,
+) -> bool:
+    """Check whether *value* is compatible with *annotation*.
+
+    Returns ``True`` if the value matches, ``False`` otherwise.  Errors are
+    accumulated in *ctx* (created automatically if not provided).
+
+    *custom_handlers* maps ``type(value)`` to a callable
+    ``(value, annotation, handlers, ctx) -> bool`` that overrides the
+    default checking logic for that runtime type.
+    """
     if custom_handlers is None:
         custom_handlers = {}
     if ctx is None:
@@ -78,7 +112,17 @@ def check_type(value, annotation, custom_handlers=None, ctx=None):
     )
 
 
-def check_branch(value, annotation, custom_handlers, ctx):
+def check_branch(
+    value: Any,
+    annotation: Any,
+    custom_handlers: Dict[type, Callable[..., bool]],
+    ctx: Ctx,
+) -> bool:
+    """Check *value* against a single (non-Union) annotation branch.
+
+    First checks the top-level match via ``outer_match``, then recursively
+    checks children yielded by ``decompose``.
+    """
     if not outer_match(value, annotation):
         ctx.fail(value, annotation)
         return False
@@ -93,7 +137,14 @@ def check_branch(value, annotation, custom_handlers, ctx):
 # ---------------------------------------------------------------------------
 
 
-def get_annot_branches(annotation):
+def get_annot_branches(annotation: Any) -> Tuple[Any, ...]:
+    """Split a (possibly Union) annotation into individual branches.
+
+    ``Union[int, str]`` becomes ``(int, str)``.  ``Optional[X]`` becomes
+    ``(X, NoneType)``.  ``X | Y`` (Python 3.10+) is handled via
+    ``types.UnionType``.  Non-union annotations are returned as a
+    single-element tuple.
+    """
     origin = get_origin(annotation)
 
     # Union[X, Y] and Optional[X] (which is Union[X, None])
@@ -111,9 +162,8 @@ def get_annot_branches(annotation):
 # outer_match: does the value match at this level, ignoring children?
 # ---------------------------------------------------------------------------
 
-# Map from typing generics to their runtime counterparts.
-# get_origin handles most of these, but we need this for isinstance checks.
-ORIGIN_TO_BUILTIN = {
+#: Map from typing generic origins to the runtime types used for isinstance.
+ORIGIN_TO_BUILTIN: Dict[Any, Any] = {
     list: list,
     dict: dict,
     tuple: tuple,
@@ -131,7 +181,20 @@ ORIGIN_TO_BUILTIN = {
 }
 
 
-def outer_match(value, annotation):
+def outer_match(value: Any, annotation: Any) -> bool:
+    """Check whether *value* matches *annotation* at the top level.
+
+    This does **not** recurse into container elements — that is the job of
+    ``decompose`` + ``check_branch``.  Coercion rules:
+
+    * ``bool`` requires an exact bool (``0``/``1`` are rejected).
+    * ``int`` accepts ints and parseable strings, but rejects bools.
+    * ``float`` accepts ints, floats, and parseable strings, but rejects bools.
+    * ``Path``/``PurePath`` accept strings.
+    * ``str`` enums accept valid member value strings.
+    * Generators / iterators always pass (to avoid consuming them).
+    * Unresolved ``ForwardRef`` and string annotations always pass.
+    """
     # Any / Parameter.empty matches everything
     if annotation is Any or annotation is inspect.Parameter.empty:
         return True
@@ -283,8 +346,13 @@ def outer_match(value, annotation):
 # ---------------------------------------------------------------------------
 
 
-def _resolve_dataclass_hints(cls):
-    """Resolve forward references in a dataclass's type annotations."""
+def _resolve_dataclass_hints(cls: type) -> Dict[str, Any]:
+    """Resolve forward references in a dataclass's type annotations.
+
+    Uses ``get_type_hints`` with the class's module globals so that
+    forward references like ``ForwardRef('Floats3d')`` are resolved to
+    actual types.  Returns an empty dict on failure.
+    """
     import sys
     from typing import get_type_hints
 
@@ -296,13 +364,17 @@ def _resolve_dataclass_hints(cls):
         return {}
 
 
-def _has_strict_metadata(metadata):
-    """Check if Annotated metadata contains a Strict() marker."""
+def _has_strict_metadata(metadata: Tuple[Any, ...]) -> bool:
+    """Check if ``Annotated`` metadata contains a ``Strict()`` marker."""
     return any(getattr(m, "strict", False) for m in metadata if hasattr(m, "strict"))
 
 
-def _strict_match(value, inner_type):
-    """Exact type match for Annotated[X, Strict()]."""
+def _strict_match(value: Any, inner_type: type) -> bool:
+    """Exact type match for ``Annotated[X, Strict()]``.
+
+    Unlike the normal coercion rules, strict matching requires
+    ``type(value)`` to be exactly the annotated type.
+    """
     if inner_type is int:
         return type(value) is int and not isinstance(value, bool)
     if inner_type is float:
@@ -315,16 +387,20 @@ def _strict_match(value, inner_type):
 
 
 class _AnySchemaHandler:
-    """Minimal stand-in for pydantic's GetCoreSchemaHandler."""
+    """Minimal stand-in for pydantic's ``GetCoreSchemaHandler``."""
 
     def __call__(
-        self, _source_type
-    ):  # pragma: no cover -- called internally by pydantic hooks
+        self, _source_type: Any
+    ) -> Dict[str, Any]:  # pragma: no cover -- called internally by pydantic hooks
         return {"type": "any"}  # pragma: no cover
 
 
-def _pydantic_v2_match(value, annotation):
-    """Check value against a type with __get_pydantic_core_schema__."""
+def _pydantic_v2_match(value: Any, annotation: type) -> bool:
+    """Check *value* against a type with ``__get_pydantic_core_schema__``.
+
+    Extracts the validator function from the pydantic core schema and calls
+    it.  Falls back to ``isinstance`` if the value is already an instance.
+    """
     if isinstance(value, annotation):
         return True
     try:
@@ -342,14 +418,20 @@ def _pydantic_v2_match(value, annotation):
 
 
 class _PydanticV1FieldShim:
-    """Minimal shim providing field.type_ for pydantic v1 validators."""
+    """Minimal shim providing ``field.type_`` for pydantic v1 validators."""
 
-    def __init__(self, typ):
+    def __init__(self, typ: type) -> None:
         self.type_ = typ
 
 
-def _pydantic_v1_match(value, annotation):
-    """Check value against a type with __get_validators__."""
+def _pydantic_v1_match(value: Any, annotation: type) -> bool:
+    """Check *value* against a type with ``__get_validators__``.
+
+    Iterates through the validators yielded by the type's
+    ``__get_validators__`` classmethod.  Validators with more than
+    2 parameters are skipped (they require a ``config`` argument we
+    don't have).
+    """
     if isinstance(value, annotation):
         return True
     shim = _PydanticV1FieldShim(annotation)
@@ -371,8 +453,8 @@ def _pydantic_v1_match(value, annotation):
 # decompose: yield (child_value, child_annotation, child_ctx) triples
 # ---------------------------------------------------------------------------
 
-# Origins that are sequence-like: one type arg, fan across elements
-SEQUENCE_ORIGINS = {
+#: Origins that are sequence-like: one type arg, fan across elements.
+SEQUENCE_ORIGINS: set[Any] = {
     list,
     set,
     frozenset,
@@ -384,15 +466,22 @@ SEQUENCE_ORIGINS = {
     collections.abc.Iterator,
 }
 
-# Origins that are mapping-like: two type args (key, value)
-MAPPING_ORIGINS = {
+#: Origins that are mapping-like: two type args (key, value).
+MAPPING_ORIGINS: set[Any] = {
     dict,
     collections.abc.Mapping,
     collections.abc.MutableMapping,
 }
 
 
-def decompose(value, annotation, ctx):
+def decompose(value: Any, annotation: Any, ctx: Ctx) -> Iterator[Tuple[Any, Any, Ctx]]:
+    """Yield ``(child_value, child_annotation, child_ctx)`` triples.
+
+    This is the recursive engine of the type checker.  For container types
+    it fans out over elements; for dataclasses and schemas it fans out
+    over fields.  ``outer_match`` has already confirmed the top-level
+    match, so we only need to check the children here.
+    """
     # Annotated[T, ...] — unwrap
     if get_origin(annotation) is Annotated:
         annotation = get_args(annotation)[0]
