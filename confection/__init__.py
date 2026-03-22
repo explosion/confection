@@ -15,6 +15,7 @@ from .util import (  # noqa: F401
     try_dump_json,
     try_load_json,
 )
+from .validation import Schema  # noqa: F401
 
 __all__ = [
     "Config",

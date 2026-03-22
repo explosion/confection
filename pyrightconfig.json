@@ -1,5 +1,4 @@
 {
-  "venvPath": "/Users/matt/repos/spacy-monorepo",
-  "venv": ".venv",
-  "extraPaths": ["/Users/matt/repos/spacy-monorepo/catalogue"]
+  "exclude": ["confection/tests"],
+  "reportMissingImports": "warning"
 }
