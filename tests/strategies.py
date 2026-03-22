@@ -131,3 +131,113 @@ def json_config_dicts(draw):
                 inline_paths.add(f"{section_key}.{key}")
 
     return base, inline_paths
+
+
+def _collect_scalar_paths(data, prefix=""):
+    """Collect all (dotted_path, value) pairs for scalar leaves in a config dict."""
+    paths = []
+    for key, value in data.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            paths.extend(_collect_scalar_paths(value, path))
+        elif not isinstance(value, (list, dict)):
+            paths.append((path, value))
+    return paths
+
+
+def _set_at_path(data, path, value):
+    """Set a value at a dotted path in a nested dict."""
+    parts = path.split(".")
+    node = data
+    for part in parts[:-1]:
+        node = node[part]
+    node[parts[-1]] = value
+
+
+def _deep_copy(obj):
+    """Simple deep copy for nested dicts/lists of scalars."""
+    if isinstance(obj, dict):
+        return {k: _deep_copy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_deep_copy(v) for v in obj]
+    return obj
+
+
+def _make_interpolated_config_str(sections, replacements):
+    """Build a config string from sections, applying variable replacements."""
+    modified = {name: dict(leaves) for name, leaves in sections}
+    for replace_path, target_path in replacements.items():
+        section, key = replace_path.rsplit(".", 1)
+        if section in modified:
+            modified[section][key] = "${" + target_path + "}"
+    parts = []
+    for section_name, _ in sections:
+        parts.append(f"[{section_name}]")
+        for key, val in modified.get(section_name, {}).items():
+            parts.append(f"{key} = {val}")
+        parts.append("")
+    return "\n".join(parts).strip()
+
+
+@st.composite
+def interpolated_config(draw):
+    """Strategy producing (config_str, expected_dict) with variable interpolation.
+
+    Replaces some scalar leaves with ${section.key} references. Avoids cycles
+    by only referencing values that are never themselves replaced.
+    """
+    base = draw(config_dicts)
+    scalar_paths = _collect_scalar_paths(base)
+    # Filter out bools — they serialize as true/false which can't be
+    # referenced via ${} (configparser treats them specially)
+    scalar_paths = [(p, v) for p, v in scalar_paths if not isinstance(v, bool)]
+    if len(scalar_paths) < 2:
+        return serialize_with_inline(base), base
+
+    sections = _flatten_sections(base)
+    expected = _deep_copy(base)
+
+    # Split paths into targets (stable values to reference) and candidates
+    # (values that may be replaced with refs). A path can't be both.
+    n_targets = draw(st.integers(min_value=1, max_value=max(1, len(scalar_paths) // 2)))
+    indices = draw(st.permutations(range(len(scalar_paths))))
+    target_indices = set(indices[:n_targets])
+    targets = [scalar_paths[i] for i in target_indices]
+    candidates = [scalar_paths[i] for i in range(len(scalar_paths)) if i not in target_indices]
+
+    if not targets or not candidates:
+        return serialize_with_inline(base), base
+
+    replacements = {}
+    for cand_path, _ in candidates:
+        if draw(st.booleans()):
+            target_path, target_value = draw(st.sampled_from(targets))
+            replacements[cand_path] = target_path
+            _set_at_path(expected, cand_path, target_value)
+
+    config_str = _make_interpolated_config_str(sections, replacements)
+    return config_str, expected
+
+
+@st.composite
+def circular_interpolated_config(draw):
+    """Strategy producing config strings with circular variable references."""
+    base = draw(config_dicts)
+    scalar_paths = _collect_scalar_paths(base)
+    scalar_paths = [(p, v) for p, v in scalar_paths if not isinstance(v, bool)]
+    if len(scalar_paths) < 2:
+        from hypothesis import assume
+        assume(False)
+
+    sections = _flatten_sections(base)
+
+    # Pick 2+ paths and create a cycle: a -> b -> ... -> a
+    cycle_len = draw(st.integers(min_value=2, max_value=min(4, len(scalar_paths))))
+    indices = draw(st.permutations(range(len(scalar_paths))))
+    cycle_paths = [scalar_paths[indices[i]][0] for i in range(cycle_len)]
+
+    replacements = {}
+    for i in range(cycle_len):
+        replacements[cycle_paths[i]] = cycle_paths[(i + 1) % cycle_len]
+
+    return _make_interpolated_config_str(sections, replacements)

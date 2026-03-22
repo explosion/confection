@@ -8,7 +8,12 @@ Just basic structure and JSON-encoded values.
 from hypothesis import given
 
 from confection import Config
-from tests.strategies import config_dicts, json_config_dicts, serialize_with_inline
+import pytest
+from configparser import InterpolationDepthError
+from tests.strategies import (
+    config_dicts, json_config_dicts, serialize_with_inline,
+    interpolated_config, circular_interpolated_config,
+)
 
 
 @given(config_dicts)
@@ -28,6 +33,22 @@ def test_json_leaves_parse(pair):
     config_str = serialize_with_inline(data, inline_paths)
     restored = Config().from_str(config_str, interpolate=False)
     assert dict_equal(restored, data)
+
+
+@given(interpolated_config())
+def test_variable_interpolation(pair):
+    """Config strings with ${section.key} variable references should resolve
+    to the referenced values after interpolation."""
+    config_str, expected = pair
+    restored = Config().from_str(config_str, interpolate=True)
+    assert dict_equal(restored, expected)
+
+
+@given(circular_interpolated_config())
+def test_circular_interpolation_raises(config_str):
+    """Circular variable references should raise an error."""
+    with pytest.raises((InterpolationDepthError, Exception)):
+        Config().from_str(config_str, interpolate=True)
 
 
 def dict_equal(a, b) -> bool:
