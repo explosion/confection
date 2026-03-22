@@ -256,6 +256,19 @@ def test_pydantic_v1_uninspectable_sig():
     assert not check_type("hi", MyType)
 
 
+# --- TypeVar bound that fails isinstance ---
+
+
+def test_typevar_bound_isinstance_typeerror():
+    """TypeVar bound with ForwardRef that fails isinstance falls back to outer_match."""
+    from typing import ForwardRef, TypeVar
+
+    T = TypeVar("T", bound=ForwardRef("NonExistent"))
+    # ForwardRef can't be used with isinstance — falls back to outer_match
+    # which accepts ForwardRefs
+    assert check_type(42, T)
+
+
 # --- ctx default ---
 
 

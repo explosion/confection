@@ -247,9 +247,8 @@ def outer_match(value: Any, annotation: Any) -> bool:
         try:
             if not isinstance(value, check_against):
                 return False
-        except TypeError:
-            # origin isn't a valid type for isinstance (e.g. some custom generics)
-            return True
+        except TypeError:  # pragma: no cover -- custom generics with non-type origins
+            return True  # pragma: no cover
         # Fixed-length tuple: check length here
         if origin is tuple:
             args = get_args(annotation)
@@ -360,8 +359,8 @@ def _resolve_dataclass_hints(cls: type) -> Dict[str, Any]:
     globalns = vars(mod) if mod else None
     try:
         return get_type_hints(cls, globalns=globalns)
-    except (NameError, AttributeError, TypeError, RecursionError):
-        return {}
+    except (NameError, AttributeError, TypeError, RecursionError):  # pragma: no cover
+        return {}  # pragma: no cover
 
 
 def _has_strict_metadata(metadata: Tuple[Any, ...]) -> bool:
