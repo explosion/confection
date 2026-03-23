@@ -9,9 +9,11 @@ on:
       - 'prerelease-v[0-9]+.[0-9]+.[0-9]+**'
   workflow_dispatch: # allows you to trigger manually
 
+permissions: {}
+
 jobs:
   build_wheels:
-    uses: explosion/gha-cibuildwheel/.github/workflows/cibuildwheel.yml@main
+    uses: explosion/gha-cibuildwheel/.github/workflows/cibuildwheel.yml@2c98f757f13d112cf73fcf4b627249f1fffb5aae # main
     permissions:
       contents: write
       actions: read
