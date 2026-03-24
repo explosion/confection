@@ -132,11 +132,20 @@ def is_promise(obj) -> bool:
     return False
 
 
+_PYTHON_LITERALS = {"True": True, "False": False, "None": None}
+
+
 def try_load_json(value: str) -> Any:
-    """Load a JSON string if possible, otherwise default to original value."""
+    """Load a JSON string if possible, otherwise default to original value.
+
+    Also handles Python-style literals ``True``, ``False``, and ``None``
+    which are not valid JSON but are commonly used in config files.
+    """
     try:
         return json.loads(value)
     except Exception:
+        if value in _PYTHON_LITERALS:
+            return _PYTHON_LITERALS[value]
         return value
 
 

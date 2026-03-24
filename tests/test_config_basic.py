@@ -130,6 +130,42 @@ learning_rate = ${settings.lr}
     assert result["models"]["*"]["first"]["learning_rate"] == 0.001
 
 
+@pytest.mark.parametrize(
+    "text,expected_value,expected_type",
+    [
+        ("True", True, bool),
+        ("False", False, bool),
+        ("true", True, bool),
+        ("false", False, bool),
+        ("None", None, type(None)),
+        ("null", None, type(None)),
+    ],
+)
+def test_python_style_literals(text, expected_value, expected_type):
+    """Python-style True/False/None must be parsed the same as JSON-style
+    true/false/null. Many existing spaCy configs use the capitalised form."""
+    cfg = f"[section]\nval = {text}\n"
+    config = Config().from_str(cfg)
+    result = config["section"]["val"]
+    assert result is expected_value, (
+        f"Expected {expected_value!r} ({expected_type.__name__}), "
+        f"got {result!r} ({type(result).__name__})"
+    )
+    assert type(result) is expected_type
+
+
+@pytest.mark.parametrize("text", ['"True"', '"False"', '"None"'])
+def test_quoted_python_literals_stay_strings(text):
+    """JSON-quoted strings like '"True"' must remain strings, not be coerced
+    to booleans/None."""
+    cfg = f"[section]\nval = {text}\n"
+    config = Config().from_str(cfg)
+    result = config["section"]["val"]
+    assert isinstance(result, str), (
+        f"Expected str, got {type(result).__name__}: {result!r}"
+    )
+
+
 def dict_equal(a, b) -> bool:
     """Recursively compare two nested dicts, treating empty dicts as equal."""
     if type(a) is not type(b) and not (isinstance(a, dict) and isinstance(b, dict)):
