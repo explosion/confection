@@ -7,7 +7,8 @@ on:
     branches: ["*"]
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: tests-${{ github.ref }}
