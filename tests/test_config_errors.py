@@ -123,6 +123,58 @@ def test_dollar_dollar_escape():
     assert result["a"]["x"] == "$100"
 
 
+def test_dollar_dollar_escape_without_interpolation():
+    """$$ should decode to $ when variables aren't interpolated."""
+    data = {"a": {"n": 1, "pattern": "^v$", "prices": ["$5"]}}
+    text = Config(data).to_str(interpolate=False)
+    raw = Config().from_str(text, interpolate=False)
+    assert raw == data
+    assert raw.to_str(interpolate=False) == text
+    assert raw.interpolate() == data
+    assert Config().from_str(text, overrides={"a.n": 1}) == data
+
+
+def test_dollar_dollar_escape_with_reference_in_container():
+    """An unrelated reference must not prevent decoding escapes in JSON."""
+    text = (
+        "[a]\nx = 1\n\n[b]\nw = 0\n"
+        'l = ["$$5", "${a.x}"]\n'
+        'd = {"p": "$$", "v": "${a.x}"}'
+    )
+    direct = Config().from_str(text)
+    overridden = Config().from_str(text, overrides={"b.w": 0})
+    raw = Config().from_str(text, interpolate=False)
+    deferred = raw.interpolate()
+    for config in (direct, overridden, deferred):
+        assert config["b"]["l"] == ["$5", "1"]
+        assert config["b"]["d"]["p"] == "$"
+    saved = raw.to_str(interpolate=False)
+    assert (
+        Config().from_str(saved, interpolate=False).to_str(interpolate=False) == saved
+    )
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (
+            '{"spaced": "$$ ${a.x}", "adjacent": "$$${a.x}"}',
+            {"spaced": "$ 1", "adjacent": "$1"},
+        ),
+        ('{"literal": "$${a.x}"}', {"literal": "${a.x}"}),
+        ('{"nested": {"spaced": "$$ ${a.x}"}}', {"nested": {"spaced": "$ 1"}}),
+    ],
+)
+def test_dollar_dollar_escape_with_reference_in_inline_dict_value(value, expected):
+    """Inline dicts preserve escapes when serialized into subsections."""
+    text = "[a]\nx = 1\nw = 0\n\n[b]\nd = " + value
+    assert Config().from_str(text)["b"]["d"] == expected
+    raw = Config().from_str(text, interpolate=False)
+    assert raw.interpolate()["b"]["d"] == expected
+    assert Config().from_str(text, overrides={"a.w": 1})["b"]["d"] == expected
+    assert Config().from_str(raw.to_str(interpolate=False))["b"]["d"] == expected
+
+
 def test_bad_interpolation_syntax():
     """Malformed ${...} reference should raise."""
     with pytest.raises(Exception):

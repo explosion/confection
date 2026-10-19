@@ -33,7 +33,8 @@ def parse_config(
     Returns the nested dict and whether a second interpolation pass is needed
     (when overrides were applied with interpolation enabled).
     """
-    config_parser = _get_configparser(interpolate=interpolate and not overrides)
+    use_interpolation = interpolate and not overrides
+    config_parser = _get_configparser(interpolate=use_interpolation)
     try:
         config_parser.read_string(text)
     except ParsingError as e:
@@ -64,7 +65,9 @@ def parse_config(
         for part in parts:
             node = node[part]
         for key in values:
-            node[key] = _interpret_value(config_parser.get(section, key))
+            node[key] = _interpret_value(
+                config_parser.get(section, key), unescape=not use_interpolation
+            )
     # Phase 3: Apply overrides on the nested dict.
     _apply_overrides(result, overrides)
     # Phase 4: Replace section reference placeholders with actual dicts.
@@ -190,9 +193,12 @@ def _validate_overrides(
     return errors
 
 
-def _interpret_value(value: Any) -> Any:
+def _interpret_value(value: Any, *, unescape: bool = False) -> Any:
     """Interpret a single config value."""
-    result = try_load_json(value)
+    # Without interpolation, configparser keeps "$$" escapes. Decode them in
+    # JSON containers too, even if another item contains a variable reference.
+    decoded = value.replace("$$", "$") if unescape else value
+    result = try_load_json(decoded)
     # If value is a string and it contains a variable, use original value
     # (not interpreted string, which could lead to double quotes:
     # ${x.y} -> "${x.y}" -> "'${x.y}'"). Make sure to check it's a string,
@@ -200,7 +206,23 @@ def _interpret_value(value: Any) -> Any:
     # NOTE: This currently can't handle uninterpolated values like [${x.y}]!
     if isinstance(result, str) and VARIABLE_RE.search(value):
         result = value
+    elif unescape and isinstance(result, dict):
+        # Dict values become section values when saved, and strings with
+        # variables are written verbatim there, so keep their "$$" escapes.
+        _keep_escaped_variables(result, try_load_json(value))
     return result
+
+
+def _keep_escaped_variables(decoded: dict, raw: Any) -> None:
+    """Restore raw strings with variables in a decoded inline dict."""
+    if not isinstance(raw, dict) or len(decoded) != len(raw):
+        return
+    for key, raw_item in zip(list(decoded), raw.values()):
+        item = decoded[key]
+        if isinstance(item, dict):
+            _keep_escaped_variables(item, raw_item)
+        elif isinstance(raw_item, str) and VARIABLE_RE.search(raw_item):
+            decoded[key] = raw_item
 
 
 def _replace_section_refs(
