@@ -63,9 +63,19 @@ def test_override_applies():
 
 
 def test_interpolation_missing_variable():
-    """Referencing a nonexistent variable should raise."""
-    with pytest.raises(Exception):
+    """Referencing a nonexistent variable should raise a ConfigValidationError."""
+    with pytest.raises(ConfigValidationError, match="b.y"):
         Config().from_str("[a]\nx = ${b.y}", interpolate=True)
+    with pytest.raises(ConfigValidationError, match="b.z"):
+        Config().from_str("[b]\ny = 1\n\n[a]\nx = ${b.z}", interpolate=True)
+    # With overrides, interpolation happens in a second pass
+    with pytest.raises(ConfigValidationError, match="b.z"):
+        Config().from_str(
+            "[b]\ny = 1\n\n[a]\nx = ${b.z}", interpolate=True, overrides={"b.y": 2}
+        )
+    cfg = Config().from_str("[b]\ny = 1\n\n[a]\nx = ${b.z}", interpolate=False)
+    with pytest.raises(ConfigValidationError, match="b.z"):
+        cfg.interpolate()
 
 
 def test_section_ref_in_string():

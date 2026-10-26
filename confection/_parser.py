@@ -64,7 +64,12 @@ def parse_config(
         for part in parts:
             node = node[part]
         for key in values:
-            node[key] = _interpret_value(config_parser.get(section, key))
+            try:
+                value = config_parser.get(section, key)
+            except InterpolationMissingOptionError as e:
+                # A ${...} reference to a section or key that doesn't exist
+                raise ConfigValidationError(desc=f"{e}") from None
+            node[key] = _interpret_value(value)
     # Phase 3: Apply overrides on the nested dict.
     _apply_overrides(result, overrides)
     # Phase 4: Replace section reference placeholders with actual dicts.
