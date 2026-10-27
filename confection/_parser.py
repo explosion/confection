@@ -48,7 +48,7 @@ def parse_config(
     result: dict[str, Any] = {}
     section_parts = [section.split(".") for section in config_parser.sections()]
     # Phase 1: Build the skeleton of nested dicts from section names.
-    for parts in section_parts:
+    for parts in sorted(section_parts, key=len):
         node = result
         for part in parts[:-1]:
             node = node.setdefault(part, {}) if part == "*" else node[part]

@@ -7,6 +7,7 @@ Just basic structure and JSON-encoded values.
 """
 
 from configparser import InterpolationDepthError
+from itertools import permutations
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -19,6 +20,21 @@ from tests.strategies import (
     json_config_dicts,
     serialize_with_inline,
 )
+
+
+@pytest.mark.parametrize("order", list(permutations(range(4))))
+def test_sections_can_precede_their_parents(order):
+    sections = [
+        "[training]\nseed = 42",
+        "[training.optimizer]\nrate = 0.01",
+        "[model]\nwidth = 64",
+        "[model.encoder]\ndepth = 2",
+    ]
+    text = "\n\n".join(sections[i] for i in order)
+    assert Config().from_str(text) == {
+        "training": {"seed": 42, "optimizer": {"rate": 0.01}},
+        "model": {"width": 64, "encoder": {"depth": 2}},
+    }
 
 
 @given(config_dicts)
